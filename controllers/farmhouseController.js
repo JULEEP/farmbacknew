@@ -792,132 +792,132 @@ export const getUserWishlists = async (req, res) => {
 // // ============================================
 // // GET NEARBY FARMHOUSES (Updated with date filtering)
 // // ============================================
-// export const getNearbyFarmhouses = async (req, res) => {
-//   try {
-//     const { userId } = req.params;
-//     const { date, maxDistance = 5000 } = req.query; // Add date parameter
-
-//     const user = await User.findById(userId);
-//     if (!user) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     const [lng, lat] = user.liveLocation?.coordinates || [];
-//     if (!lat || !lng) {
-//       return res.status(400).json({
-//         message: "User location missing. Please update live location first."
-//       });
-//     }
-
-//     // Build base query
-//     const query = {
-//       location: {
-//         $near: {
-//           $geometry: { type: "Point", coordinates: [lng, lat] },
-//           $maxDistance: parseInt(maxDistance)
-//         }
-//       },
-//       active: true // Only show active farmhouses
-//     };
-
-//     // Find farmhouses
-//     let farmhouses = await Farmhouse.find(query).lean();
-
-//     // If date is provided, check inactive dates
-//     if (date) {
-//       const searchDate = new Date(date);
-//       searchDate.setHours(0, 0, 0, 0);
-
-//       farmhouses = farmhouses.filter(farmhouse => {
-//         // Check if farmhouse is inactive on this date
-//         const isInactive = farmhouse.inactiveDates?.some(inactiveDate => {
-//           const inactiveDateObj = new Date(inactiveDate.date);
-//           inactiveDateObj.setHours(0, 0, 0, 0);
-//           return inactiveDateObj.getTime() === searchDate.getTime();
-//         });
-
-//         return !isInactive;
-//       });
-//     }
-
-//     // Enrich with availability info if date provided
-//     if (date) {
-//       farmhouses = await Promise.all(farmhouses.map(async farmhouse => {
-//         // Calculate available slots for this date
-//         const availableSlots = await calculateAvailableSlots(farmhouse, date);
-
-//         return {
-//           ...farmhouse,
-//           availableSlots: availableSlots.length,
-//           isAvailableToday: availableSlots.length > 0
-//         };
-//       }));
-//     }
-
-//     res.json({
-//       success: true,
-//       userLocation: { lat, lng },
-//       date: date || 'Not specified',
-//       count: farmhouses.length,
-//       farmhouses
-//     });
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// };
-
-
-// ============================================
-// GET NEARBY FARMHOUSES (without location - shows all)
-// ============================================
 export const getNearbyFarmhouses = async (req, res) => {
   try {
     const { userId } = req.params;
+    const { date, maxDistance = 5000 } = req.query; // Add date parameter
 
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    let farmhouses;
-    let lat = null;
-    let lng = null;
-
-    //  If guest → show all
-    if (user.isGuest) {
-      farmhouses = await Farmhouse.find();
-    } else {
-      //  Normal user → nearby logic
-      [lng, lat] = user.liveLocation?.coordinates || [];
-
-      if (!lat || !lng) {
-        return res.status(400).json({
-          message: "User location missing. Please update live location first.",
-        });
-      }
-
-      farmhouses = await Farmhouse.find({
-        location: {
-          $near: {
-            $geometry: { type: "Point", coordinates: [lng, lat] },
-            $maxDistance: 5000,
-          },
-        },
+    const [lng, lat] = user.liveLocation?.coordinates || [];
+    if (!lat || !lng) {
+      return res.status(400).json({
+        message: "User location missing. Please update live location first."
       });
     }
 
-    //  Response SAME
+    // Build base query
+    const query = {
+      location: {
+        $near: {
+          $geometry: { type: "Point", coordinates: [lng, lat] },
+          $maxDistance: parseInt(maxDistance)
+        }
+      },
+      active: true // Only show active farmhouses
+    };
+
+    // Find farmhouses
+    let farmhouses = await Farmhouse.find(query).lean();
+
+    // If date is provided, check inactive dates
+    if (date) {
+      const searchDate = new Date(date);
+      searchDate.setHours(0, 0, 0, 0);
+
+      farmhouses = farmhouses.filter(farmhouse => {
+        // Check if farmhouse is inactive on this date
+        const isInactive = farmhouse.inactiveDates?.some(inactiveDate => {
+          const inactiveDateObj = new Date(inactiveDate.date);
+          inactiveDateObj.setHours(0, 0, 0, 0);
+          return inactiveDateObj.getTime() === searchDate.getTime();
+        });
+
+        return !isInactive;
+      });
+    }
+
+    // Enrich with availability info if date provided
+    if (date) {
+      farmhouses = await Promise.all(farmhouses.map(async farmhouse => {
+        // Calculate available slots for this date
+        const availableSlots = await calculateAvailableSlots(farmhouse, date);
+
+        return {
+          ...farmhouse,
+          availableSlots: availableSlots.length,
+          isAvailableToday: availableSlots.length > 0
+        };
+      }));
+    }
+
     res.json({
       success: true,
-      userLocation: lat && lng ? { lat, lng } : null,
+      userLocation: { lat, lng },
+      date: date || 'Not specified',
       count: farmhouses.length,
-      farmhouses,
+      farmhouses
     });
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
+
+// ============================================
+// GET NEARBY FARMHOUSES (without location - shows all)
+// ============================================
+// export const getNearbyFarmhouses = async (req, res) => {
+//   try {
+//     const { userId } = req.params;
+
+//     const user = await User.findById(userId);
+//     if (!user) {
+//       return res.status(404).json({ message: "User not found" });
+//     }
+
+//     let farmhouses;
+//     let lat = null;
+//     let lng = null;
+
+//     //  If guest → show all
+//     if (user.isGuest) {
+//       farmhouses = await Farmhouse.find();
+//     } else {
+//       //  Normal user → nearby logic
+//       [lng, lat] = user.liveLocation?.coordinates || [];
+
+//       if (!lat || !lng) {
+//         return res.status(400).json({
+//           message: "User location missing. Please update live location first.",
+//         });
+//       }
+
+//       farmhouses = await Farmhouse.find({
+//         location: {
+//           $near: {
+//             $geometry: { type: "Point", coordinates: [lng, lat] },
+//             $maxDistance: 5000,
+//           },
+//         },
+//       });
+//     }
+
+//     //  Response SAME
+//     res.json({
+//       success: true,
+//       userLocation: lat && lng ? { lat, lng } : null,
+//       count: farmhouses.length,
+//       farmhouses,
+//     });
+
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// };
 
 
 
