@@ -61,6 +61,10 @@ const userSchema = new mongoose.Schema({
       default: [0.0, 0.0]
     }
   },
+  isGuest: {
+      type: Boolean,
+      default: false,
+    },
   
   addresses: [addressSchema],
   notifications: [notificationSchema],

@@ -34,6 +34,6 @@ router.post("/:userId/add-address", UserController.addAddress);
 router.put("/:userId/update-address/:addressIndex", UserController.updateAddress);
 router.delete("/:userId/delete-address/:addressIndex", UserController.deleteAddress);
 router.get("/:userId/all-addresses", UserController.getAllAddresses);
-
+router.post("/guestlogin", UserController.loginOrGuest);
 
 export default router;

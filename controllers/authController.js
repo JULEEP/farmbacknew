@@ -212,7 +212,7 @@ export const updateProfile = async (req, res) => {
   try {
     const { userId } = req.params;
 
-    
+
     console.log("📝 Update Profile Request:");
     console.log("UserID:", userId);
     console.log("Body:", req.body);
@@ -432,8 +432,8 @@ export const getUserById = async (req, res) => {
 
     // Validate user ID format
     if (!userId || !userId.match(/^[0-9a-fA-F]{24}$/)) {
-      return res.status(400).json({ 
-        message: "Invalid user ID format" 
+      return res.status(400).json({
+        message: "Invalid user ID format"
       });
     }
 
@@ -441,8 +441,8 @@ export const getUserById = async (req, res) => {
       .select('-password -deleteToken -deleteTokenExpiration'); // Exclude sensitive fields
 
     if (!user) {
-      return res.status(404).json({ 
-        message: "User not found" 
+      return res.status(404).json({
+        message: "User not found"
       });
     }
 
@@ -453,9 +453,9 @@ export const getUserById = async (req, res) => {
 
   } catch (err) {
     console.error("❌ Get user by ID error:", err);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Error fetching user",
-      error: err.message 
+      error: err.message
     });
   }
 };
@@ -469,8 +469,8 @@ export const deleteUserById = async (req, res) => {
 
     // Basic validation
     if (!userId) {
-      return res.status(400).json({ 
-        message: "User ID is required" 
+      return res.status(400).json({
+        message: "User ID is required"
       });
     }
 
@@ -478,8 +478,8 @@ export const deleteUserById = async (req, res) => {
     const deletedUser = await User.findByIdAndDelete(userId);
 
     if (!deletedUser) {
-      return res.status(404).json({ 
-        message: "User not found" 
+      return res.status(404).json({
+        message: "User not found"
       });
     }
 
@@ -491,9 +491,9 @@ export const deleteUserById = async (req, res) => {
 
   } catch (err) {
     console.error("Delete user error:", err);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Error deleting user",
-      error: err.message 
+      error: err.message
     });
   }
 };
@@ -897,16 +897,16 @@ export const deleteUserAccount = async (req, res) => {
 
     // Basic validation
     if (!userId) {
-      return res.status(400).json({ 
-        message: "User ID is required" 
+      return res.status(400).json({
+        message: "User ID is required"
       });
     }
 
     // Check if user exists
     const user = await User.findById(userId);
     if (!user) {
-      return res.status(404).json({ 
-        message: "User not found" 
+      return res.status(404).json({
+        message: "User not found"
       });
     }
 
@@ -920,9 +920,9 @@ export const deleteUserAccount = async (req, res) => {
 
   } catch (err) {
     console.error("Delete account error:", err);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Error deleting account",
-      error: err.message 
+      error: err.message
     });
   }
 };
@@ -1198,16 +1198,16 @@ export const confirmDeleteAccount = async (req, res) => {
 export const adminUpdateUser = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     console.log("📝 Admin Update User Request:");
     console.log("UserID:", userId);
     console.log("Body:", req.body);
 
     // Validate userId
     if (!userId || !userId.match(/^[0-9a-fA-F]{24}$/)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Invalid user ID format" 
+        message: "Invalid user ID format"
       });
     }
 
@@ -1220,15 +1220,15 @@ export const adminUpdateUser = async (req, res) => {
     if (firstName || lastName) {
       const currentUser = await User.findById(userId);
       if (!currentUser) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: "User not found" 
+          message: "User not found"
         });
       }
 
       const newFirstName = firstName || currentUser.firstName;
       const newLastName = lastName || currentUser.lastName;
-      
+
       updateData.firstName = newFirstName;
       updateData.lastName = newLastName;
       updateData.fullName = `${newFirstName} ${newLastName}`.trim();
@@ -1242,28 +1242,28 @@ export const adminUpdateUser = async (req, res) => {
 
     // Check if phone number is already taken by another user
     if (phoneNumber) {
-      const existingUser = await User.findOne({ 
-        phoneNumber, 
-        _id: { $ne: userId } 
+      const existingUser = await User.findOne({
+        phoneNumber,
+        _id: { $ne: userId }
       });
       if (existingUser) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
-          message: "Phone number already registered by another user" 
+          message: "Phone number already registered by another user"
         });
       }
     }
 
     // Check if email is already taken by another user
     if (email) {
-      const existingUser = await User.findOne({ 
-        email, 
-        _id: { $ne: userId } 
+      const existingUser = await User.findOne({
+        email,
+        _id: { $ne: userId }
       });
       if (existingUser) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
-          message: "Email already registered by another user" 
+          message: "Email already registered by another user"
         });
       }
     }
@@ -1280,9 +1280,9 @@ export const adminUpdateUser = async (req, res) => {
     );
 
     if (!updatedUser) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "User not found" 
+        message: "User not found"
       });
     }
 
@@ -1301,21 +1301,47 @@ export const adminUpdateUser = async (req, res) => {
 
   } catch (err) {
     console.error("❌ Admin update user error:", err);
-    
+
     // Handle validation errors
     if (err.name === 'ValidationError') {
       const errors = Object.values(err.errors).map(e => e.message);
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
         message: "Validation error",
-        errors: errors 
+        errors: errors
       });
     }
 
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: "Error updating user",
-      error: err.message 
+      error: err.message
     });
+  }
+};
+
+export const loginOrGuest = async (req, res) => {
+  try {
+    //  Create a guest user every time
+    const user = await User.create({
+      name: "Guest User",
+      isGuest: true,
+    });
+
+    //  Generate token
+    const token = generateToken(
+      { id: user._id, type: "guest" },
+      "7d"
+    );
+
+    return res.json({
+      success: true,
+      message: "Logged in as guest",
+      token,
+      user,
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };

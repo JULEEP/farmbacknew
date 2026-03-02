@@ -1,10 +1,14 @@
+// models/verificationTokenModel.js
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 
 const verificationTokenSchema = new mongoose.Schema({
   token: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    sparse: true, // Add this to allow multiple nulls (though we won't have nulls)
+    default: () => crypto.randomBytes(32).toString('hex') // Always generate a token
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -49,7 +53,8 @@ const verificationTokenSchema = new mongoose.Schema({
   }
 });
 
+// Remove any existing indexes and create new ones
 verificationTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-verificationTokenSchema.index({ userId: 1, farmhouseId: 1, slotId: 1, date: 1 });
+// Don't add index here, let mongoose sync properly
 
 export const VerificationToken = mongoose.model('VerificationToken', verificationTokenSchema);

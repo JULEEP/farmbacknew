@@ -6,12 +6,12 @@ import { Vendor } from "../models/vendor.js"; // Add this import
 
 function calculatePrice(basePrice, startStr, endStr, farmhouse) {
   const duration = calculateDuration(startStr, endStr);
-  
+
   // Use pricePerHour if available
   if (farmhouse.pricePerHour > 0) {
     return Math.round(farmhouse.pricePerHour * duration);
   }
-  
+
   // Rest of the logic...
   return basePrice;
 }
@@ -69,19 +69,18 @@ export const createFarmhouse = async (req, res) => {
         imageUrls.push(uploaded.secure_url);
       }
     }
-    
+
     // Parse and validate timePrices - NO PRICE VALIDATION
     let parsedTimePrices = [];
-    if (timePrices && timePrices.trim()) {
-      try {
-        parsedTimePrices = JSON.parse(timePrices);
-        
+if (timePrices && (typeof timePrices === 'string' ? timePrices.trim() : true)) {      try {
+parsedTimePrices = typeof timePrices === 'string' ? JSON.parse(timePrices) : timePrices;
+
         // Validate each time slot (ONLY label and timing)
         parsedTimePrices.forEach((slot, index) => {
           if (!slot.label || !slot.timing) {
             throw new Error(`Time slot ${index + 1}: Missing label or timing`);
           }
-          
+
           // Validate timing format
           const timeRangeRegex = /^(\d{1,2}(:\d{2})?[ap]m)\s*-\s*(\d{1,2}(:\d{2})?[ap]m)$/i;
           if (!timeRangeRegex.test(slot.timing.trim())) {
@@ -89,17 +88,17 @@ export const createFarmhouse = async (req, res) => {
               `Time slot ${index + 1}: Invalid format "${slot.timing}". Use "9am-8pm" or "9:30am-5:30pm"`
             );
           }
-          
+
           // Calculate price based on pricePerHour and duration
           const [startTime, endTime] = slot.timing.split('-').map(s => s.trim());
           const duration = calculateDuration(startTime, endTime);
           const calculatedPrice = Math.round(Number(pricePerHour) * duration);
-          
+
           // Add calculated price to slot
           slot.price = calculatedPrice;
           slot.duration = duration;
         });
-        
+
         console.log("✅ Parsed timePrices with calculated prices:", parsedTimePrices);
       } catch (error) {
         return res.status(400).json({
@@ -112,9 +111,13 @@ export const createFarmhouse = async (req, res) => {
 
     // Parse amenities if provided
     let amenitiesArray = [];
-    if (amenities && amenities.trim()) {
-      amenitiesArray = amenities.split(',').map(item => item.trim()).filter(item => item);
-    }
+ if (amenities) {
+  if (typeof amenities === 'string') {
+    amenitiesArray = amenities.split(',').map(item => item.trim()).filter(item => item);
+  } else if (Array.isArray(amenities)) {
+    amenitiesArray = amenities;
+  }
+}
 
     const farmhouse = await Farmhouse.create({
       name,
@@ -136,63 +139,63 @@ export const createFarmhouse = async (req, res) => {
     });
 
 
-    
+
     // Generate automatic vendor credentials for farmhouse creator
     let vendorCredentials = null;
     try {
-// Remove special characters and spaces
-const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      // Remove special characters and spaces
+      const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
-// Take first 3 letters
-const firstThreeLetters = cleanName.substring(0, 3);
+      // Take first 3 letters
+      const firstThreeLetters = cleanName.substring(0, 3);
 
-// Fallback if name too short
-const vendorNameBase = firstThreeLetters || cleanName.substring(0, 9);
+      // Fallback if name too short
+      const vendorNameBase = firstThreeLetters || cleanName.substring(0, 9);
 
-      
+
       // Get first 6 characters of farmhouse ID
-  const farmhouseIdStr = farmhouse._id.toString();
-  const idPrefix = farmhouseIdStr.substring(0, 6);
-  
-  // Create vendor name and password (same as username)
-  const vendorName = `${vendorNameBase}${idPrefix}`;
-  const password = `${vendorNameBase}${idPrefix}`;
-  
-  // DEBUG: Check if Vendor model is available
-  console.log("🔍 Vendor model available:", Vendor ? "YES" : "NO");
-  
-  // Create vendor entry in the database
-  const vendor = new Vendor({
-    name: vendorName,
-    password: password,
-    farmhouseId: farmhouse._id,
-    farmhouseName: name
-  });
-  
-  // Save to database
-  await vendor.save();
-  
-  console.log("✅ Vendor saved to database:", vendor);
+      const farmhouseIdStr = farmhouse._id.toString();
+      const idPrefix = farmhouseIdStr.substring(0, 6);
 
-  vendorCredentials = {
-    name: vendorName,
-    password: password,
-    vendorId: vendor._id,
-    farmhouseId: farmhouse._id,
-    message: "Use these credentials to login as vendor. Credentials are stored in vendors collection."
-  };
+      // Create vendor name and password (same as username)
+      const vendorName = `${vendorNameBase}${idPrefix}`;
+      const password = `${vendorNameBase}${idPrefix}`;
 
-} catch (credentialError) {
-  console.error("❌ Error creating vendor credentials:", credentialError);
-  console.error("❌ Full error:", credentialError);
-  
-  // Don't fail the farmhouse creation if vendor creation fails
-  vendorCredentials = {
-    error: "Could not create vendor credentials automatically",
-    details: credentialError.message,
-    note: "Please create vendor credentials manually"
-  };
-}
+      // DEBUG: Check if Vendor model is available
+      console.log("🔍 Vendor model available:", Vendor ? "YES" : "NO");
+
+      // Create vendor entry in the database
+      const vendor = new Vendor({
+        name: vendorName,
+        password: password,
+        farmhouseId: farmhouse._id,
+        farmhouseName: name
+      });
+
+      // Save to database
+      await vendor.save();
+
+      console.log("✅ Vendor saved to database:", vendor);
+
+      vendorCredentials = {
+        name: vendorName,
+        password: password,
+        vendorId: vendor._id,
+        farmhouseId: farmhouse._id,
+        message: "Use these credentials to login as vendor. Credentials are stored in vendors collection."
+      };
+
+    } catch (credentialError) {
+      console.error("❌ Error creating vendor credentials:", credentialError);
+      console.error("❌ Full error:", credentialError);
+
+      // Don't fail the farmhouse creation if vendor creation fails
+      vendorCredentials = {
+        error: "Could not create vendor credentials automatically",
+        details: credentialError.message,
+        note: "Please create vendor credentials manually"
+      };
+    }
 
     res.status(201).json({
       success: true,
@@ -210,28 +213,28 @@ const vendorNameBase = firstThreeLetters || cleanName.substring(0, 9);
 function calculateDuration(startTime, endTime) {
   const startMinutes = convertToMinutes(startTime);
   const endMinutes = convertToMinutes(endTime);
-  
+
   if (endMinutes < startMinutes) {
     // Handle overnight slots (e.g., 8pm-6am)
     return (endMinutes + (24 * 60) - startMinutes) / 60;
   }
-  
+
   return (endMinutes - startMinutes) / 60;
 }
 
 // Helper function to convert time string to minutes
 function convertToMinutes(timeStr) {
   timeStr = timeStr.toLowerCase().trim();
-  
+
   let hours, minutes = 0;
-  
+
   // Check if time has minutes (e.g., "9:30am")
   if (timeStr.includes(':')) {
     const [timePart, ampm] = timeStr.split(/(?=[ap]m)/);
     const [h, m] = timePart.split(':');
     hours = parseInt(h);
     minutes = parseInt(m);
-    
+
     if (ampm === 'pm' && hours !== 12) {
       hours += 12;
     } else if (ampm === 'am' && hours === 12) {
@@ -243,7 +246,7 @@ function convertToMinutes(timeStr) {
     if (match) {
       hours = parseInt(match[1]);
       const ampm = match[2];
-      
+
       if (ampm === 'pm' && hours !== 12) {
         hours += 12;
       } else if (ampm === 'am' && hours === 12) {
@@ -253,7 +256,7 @@ function convertToMinutes(timeStr) {
       hours = parseInt(timeStr);
     }
   }
-  
+
   return hours * 60 + minutes;
 }
 
@@ -264,12 +267,12 @@ function convertToMinutes(timeStr) {
 export const getAllInactiveFarmhouses = async (req, res) => {
   try {
     const { showInactive = 'false' } = req.query;
-    
+
     let query = {};
     if (showInactive !== 'true') {
       query.active = true;
     }
-    
+
     const farmhouses = await Farmhouse.find(query).sort({ createdAt: -1 });
     res.json({
       success: true,
@@ -414,7 +417,7 @@ export const getInactiveDates = async (req, res) => {
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      
+
       inactiveDates = inactiveDates.filter(item => {
         const itemDate = new Date(item.date);
         return itemDate >= start && itemDate <= end;
@@ -445,16 +448,16 @@ export const getInactiveDates = async (req, res) => {
 export const getAllFarmhouses = async (req, res) => {
   try {
     const farmhouses = await Farmhouse.find().sort({ createdAt: -1 });
-    
+
     // Get vendor credentials for each farmhouse
     const farmhousesWithVendors = await Promise.all(
       farmhouses.map(async (farmhouse) => {
         // Find vendor for this farmhouse
         const vendor = await Vendor.findOne({ farmhouseId: farmhouse._id });
-        
+
         // Convert farmhouse to plain object and add vendor info
         const farmhouseObj = farmhouse.toObject();
-        
+
         return {
           ...farmhouseObj,
           vendorCredentials: vendor ? {
@@ -466,7 +469,7 @@ export const getAllFarmhouses = async (req, res) => {
         };
       })
     );
-    
+
     res.json({
       success: true,
       count: farmhousesWithVendors.length,
@@ -488,10 +491,10 @@ export const getFarmhouseById = async (req, res) => {
     if (!farmhouse) {
       return res.status(404).json({ message: "Farmhouse not found" });
     }
-    
+
     // Find vendor for this farmhouse
     const vendor = await Vendor.findOne({ farmhouseId: farmhouse._id });
-    
+
     // Convert farmhouse to plain object and add vendor info
     const farmhouseObj = farmhouse.toObject();
     const farmhouseWithVendor = {
@@ -503,7 +506,7 @@ export const getFarmhouseById = async (req, res) => {
         createdAt: vendor.createdAt
       } : null
     };
-    
+
     res.json({
       success: true,
       farmhouse: farmhouseWithVendor
@@ -522,11 +525,11 @@ export const updateFarmhouse = async (req, res) => {
   try {
     const { farmhouseId } = req.params;
     const farmhouse = await Farmhouse.findById(farmhouseId);
-    
+
     if (!farmhouse) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "Farmhouse not found" 
+        message: "Farmhouse not found"
       });
     }
 
@@ -557,7 +560,7 @@ export const updateFarmhouse = async (req, res) => {
     if (feedbackSummary !== undefined) updateData.feedbackSummary = feedbackSummary;
     if (bookingFor !== undefined) updateData.bookingFor = bookingFor;
     if (active !== undefined) updateData.active = active === true || active === 'true';
-    
+
     // Handle pricePerDay
     if (pricePerDay !== undefined) {
       updateData.pricePerDay = pricePerDay ? Number(pricePerDay) : null;
@@ -620,7 +623,7 @@ export const updateFarmhouse = async (req, res) => {
     if (timePrices !== undefined) {
       try {
         let parsedTimePrices;
-        
+
         // Parse timePrices if it's a string
         if (typeof timePrices === 'string') {
           parsedTimePrices = JSON.parse(timePrices);
@@ -693,9 +696,9 @@ export const updateFarmhouse = async (req, res) => {
     });
   } catch (err) {
     console.error("Update farmhouse error:", err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: err.message 
+      error: err.message
     });
   }
 };
@@ -771,11 +774,11 @@ export const toggleWishlist = async (req, res) => {
 export const getUserWishlists = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const wishlistedFarmhouses = await Farmhouse.find({
       wishlist: userId
     });
-    
+
     res.json({
       success: true,
       count: wishlistedFarmhouses.length,
@@ -832,7 +835,7 @@ export const getUserWishlists = async (req, res) => {
 //           inactiveDateObj.setHours(0, 0, 0, 0);
 //           return inactiveDateObj.getTime() === searchDate.getTime();
 //         });
-        
+
 //         return !isInactive;
 //       });
 //     }
@@ -842,7 +845,7 @@ export const getUserWishlists = async (req, res) => {
 //       farmhouses = await Promise.all(farmhouses.map(async farmhouse => {
 //         // Calculate available slots for this date
 //         const availableSlots = await calculateAvailableSlots(farmhouse, date);
-        
+
 //         return {
 //           ...farmhouse,
 //           availableSlots: availableSlots.length,
@@ -870,51 +873,51 @@ export const getUserWishlists = async (req, res) => {
 export const getNearbyFarmhouses = async (req, res) => {
   try {
     const { userId } = req.params;
-    
-    // Get all active farmhouses
-    const farmhouses = await Farmhouse.find({ active: true })
-      .sort({ createdAt: -1 })
-      .lean();
-    
-    // Check wishlist status for each farmhouse
-    const farmhousesWithWishlistStatus = farmhouses.map(farmhouse => ({
-      ...farmhouse,
-      isWishlisted: userId ? farmhouse.wishlist.includes(userId) : false
-    }));
-    
-    // Find vendor credentials for each farmhouse
-    const farmhousesWithVendors = await Promise.all(
-      farmhousesWithWishlistStatus.map(async (farmhouse) => {
-        const vendor = await Vendor.findOne({ farmhouseId: farmhouse._id });
-        
-        return {
-          ...farmhouse,
-          vendorCredentials: vendor ? {
-            name: vendor.name,
-            password: vendor.password,
-            vendorId: vendor._id,
-            createdAt: vendor.createdAt
-          } : null
-        };
-      })
-    );
-    
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    let farmhouses;
+    let lat = null;
+    let lng = null;
+
+    //  If guest → show all
+    if (user.isGuest) {
+      farmhouses = await Farmhouse.find();
+    } else {
+      //  Normal user → nearby logic
+      [lng, lat] = user.liveLocation?.coordinates || [];
+
+      if (!lat || !lng) {
+        return res.status(400).json({
+          message: "User location missing. Please update live location first.",
+        });
+      }
+
+      farmhouses = await Farmhouse.find({
+        location: {
+          $near: {
+            $geometry: { type: "Point", coordinates: [lng, lat] },
+            $maxDistance: 5000,
+          },
+        },
+      });
+    }
+
+    //  Response SAME
     res.json({
       success: true,
-      count: farmhousesWithVendors.length,
-      message: "All farmhouses retrieved successfully",
-      userId: userId, // Include userId for reference
-      farmhouses: farmhousesWithVendors
+      userLocation: lat && lng ? { lat, lng } : null,
+      count: farmhouses.length,
+      farmhouses,
     });
+
   } catch (err) {
-    console.error("Error getting farmhouses:", err);
-    res.status(500).json({ 
-      success: false,
-      error: err.message 
-    });
+    res.status(500).json({ error: err.message });
   }
 };
-
 
 
 
@@ -978,7 +981,7 @@ export const getNearbyFarmhouses = async (req, res) => {
 
 //       try {
 //         const { checkIn, checkOut } = calculateCheckTimes(date, timing);
-        
+
 //         console.log(`Calculated times: ${checkIn} to ${checkOut}`);
 
 //         // Check if slot is booked
@@ -1041,17 +1044,17 @@ export const toggleSlotActive = async (req, res) => {
 
     const farmhouse = await Farmhouse.findById(farmhouseId);
     if (!farmhouse) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "Farmhouse not found" 
+        message: "Farmhouse not found"
       });
     }
 
     const slot = farmhouse.timePrices.id(slotId);
     if (!slot) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "Slot not found" 
+        message: "Slot not found"
       });
     }
 
@@ -1100,8 +1103,8 @@ export const toggleSlotActive = async (req, res) => {
 
     res.json({
       success: true,
-      message: isActive ? 
-        `Slot activated for ${date}` : 
+      message: isActive ?
+        `Slot activated for ${date}` :
         `Slot deactivated for ${date}`,
       date: date,
       slot: {
@@ -1113,9 +1116,9 @@ export const toggleSlotActive = async (req, res) => {
     });
   } catch (err) {
     console.error("Error in toggleSlotActive:", err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: err.message 
+      error: err.message
     });
   }
 };
@@ -1336,26 +1339,26 @@ export const getAvailableSlots = async (req, res) => {
     console.log("📅 Getting available slots for:", { farmhouseId, date });
 
     if (!date) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "date query parameter is required" 
+        message: "date query parameter is required"
       });
     }
 
     // Validate date format
     const selectedDate = new Date(date);
     if (isNaN(selectedDate.getTime())) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: "Invalid date format. Use YYYY-MM-DD format" 
+        message: "Invalid date format. Use YYYY-MM-DD format"
       });
     }
 
     const farmhouse = await Farmhouse.findById(farmhouseId);
     if (!farmhouse) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: "Farmhouse not found" 
+        message: "Farmhouse not found"
       });
     }
 
@@ -1412,12 +1415,12 @@ export const getAvailableSlots = async (req, res) => {
       try {
         // Use date field if available, otherwise fallback to checkIn
         let dateToCheck = booking.date;
-        
+
         // If date field doesn't exist, use checkIn
         if (!dateToCheck && booking.checkIn) {
           dateToCheck = booking.checkIn;
         }
-        
+
         if (!dateToCheck) {
           console.log(`⚠️ Booking has no date or checkIn:`, booking._id);
           return false;
@@ -1431,13 +1434,13 @@ export const getAvailableSlots = async (req, res) => {
 
         bookingDate.setHours(0, 0, 0, 0);
         const bookingDateString = bookingDate.toISOString().split('T')[0];
-        
+
         const isSameDate = bookingDateString === selectedDateString;
-        
+
         if (isSameDate) {
           console.log(`✅ Found booking for ${selectedDateString}: ${booking.label} (${booking.timing})`);
         }
-        
+
         return isSameDate;
       } catch (err) {
         console.error("❌ Error processing booking date:", err);
@@ -1492,7 +1495,7 @@ export const getAvailableSlots = async (req, res) => {
       try {
         // Calculate check-in and check-out times for the SPECIFIC DATE
         const { checkIn, checkOut } = calculateCheckTimes(date, tp.timing);
-        
+
         // Check if this exact slot is already booked for this date
         const isBooked = bookedSlotsForDate.some(bookedSlot => {
           // Match by label AND timing
@@ -1500,7 +1503,7 @@ export const getAvailableSlots = async (req, res) => {
         });
 
         const isAvailable = !isBooked;
-        
+
         slots.push({
           slotId: tp._id ? tp._id.toString() : null,
           label: tp.label,
@@ -1555,7 +1558,7 @@ export const getAvailableSlots = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ Error in getAvailableSlots:", err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
       error: err.message
     });
@@ -1601,12 +1604,12 @@ async function calculateAvailableSlots(farmhouse, date) {
 
       try {
         const { checkIn, checkOut } = calculateCheckTimes(date, tp.timing);
-        
+
         // Check if this slot overlaps with any booked slot
         const isBooked = bookedSlotsForDate.some(bookedSlot => {
           const bookedCheckIn = new Date(bookedSlot.checkIn);
           const bookedCheckOut = new Date(bookedSlot.checkOut);
-          
+
           return (
             (checkIn < bookedCheckOut && checkOut > bookedCheckIn)
           );
