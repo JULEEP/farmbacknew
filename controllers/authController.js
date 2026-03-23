@@ -5,12 +5,32 @@ import cloudinary from "../config/cloudinary.js";
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import twilio from "twilio";
+
 dotenv.config();
 
 
+
+
+
+const accountSid = 'ACd37d269a71fda78661c1fd2a54a5b567';
+const authToken = '7aa750ace9185c1850988f31a4e5b5fc';
+const twilioPhone = '+16193309459';
+
+const client = twilio(accountSid, authToken);
+
+const generateOTP = () => Math.floor(1000 + Math.random() * 9000).toString();
+
 export const register = async (req, res) => {
   try {
-    const { firstName, lastName, email, phoneNumber, password, confirmPassword } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      phoneNumber,
+      password,
+      confirmPassword
+    } = req.body;
 
     if (!firstName || !lastName || !email || !phoneNumber || !password || !confirmPassword)
       return res.status(400).json({ message: "All fields required" });
@@ -22,38 +42,48 @@ export const register = async (req, res) => {
     if (exists)
       return res.status(400).json({ message: "Phone number already registered" });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const otp = generateOTP();
 
-    const user = await User.create({
-      firstName,
-      lastName,
-      fullName: `${firstName} ${lastName}`,
-      email,
-      phoneNumber,
-      password: hashedPassword
+    // ✅ DO NOT SAVE USER IN DB YET
+
+    // Send OTP
+    await client.messages.create({
+      body: `Dear Customer,
+
+Your OTP for V FARM verification is ${otp}.
+
+This OTP is valid for 10 minutes.
+
+Regards,
+V FARM Team`,
+      from: twilioPhone,
+      to: `+91${phoneNumber}`,
     });
 
-    const otp = "1234";
-
+    // store EVERYTHING temporarily in token
     const token = generateToken(
-      { id: user._id, phoneNumber, otp, type: "register" },
+      {
+        firstName,
+        lastName,
+        email,
+        phoneNumber,
+        password,
+        otp,
+        type: "register"
+      },
       "10m"
     );
 
     res.json({
       success: true,
-      message: "Registration successful. OTP sent!",
-      otp,
-      token,
-      user
+      message: "OTP sent successfully",
+      token
     });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
-
 // -----------------------------
 // VERIFY OTP (REGISTER / LOGIN / FORGOT)
 // -----------------------------
@@ -69,8 +99,39 @@ export const verifyOtp = async (req, res) => {
     if (decoded.otp !== otp)
       return res.status(400).json({ message: "Invalid OTP" });
 
-    // CASE 1: Registration / Login → final auth token
-    if (decoded.type === "register" || decoded.type === "login") {
+    // -----------------------------
+    // REGISTER FLOW
+    // -----------------------------
+    if (decoded.type === "register") {
+
+      const hashedPassword = await bcrypt.hash(decoded.password, 10);
+
+      const user = await User.create({
+        firstName: decoded.firstName,
+        lastName: decoded.lastName,
+        fullName: `${decoded.firstName} ${decoded.lastName}`,
+        email: decoded.email,
+        phoneNumber: decoded.phoneNumber,
+        password: hashedPassword
+      });
+
+      const finalToken = generateToken(
+        { id: user._id, phoneNumber: user.phoneNumber },
+        "7d"
+      );
+
+      return res.json({
+        success: true,
+        message: "Registration successful",
+        token: finalToken,
+        user
+      });
+    }
+
+    // -----------------------------
+    // LOGIN FLOW (same as before)
+    // -----------------------------
+    if (decoded.type === "login" || decoded.type === "forgot") {
       const finalToken = generateToken(
         { id: decoded.id, phoneNumber: decoded.phoneNumber },
         "7d"
@@ -80,20 +141,6 @@ export const verifyOtp = async (req, res) => {
         success: true,
         message: "OTP Verified Successfully",
         token: finalToken
-      });
-    }
-
-    // CASE 2: Forgot password → return reset-password token
-    if (decoded.type === "forgot") {
-      const resetToken = generateToken(
-        { phoneNumber: decoded.phoneNumber, type: "reset" },
-        "15m"
-      );
-
-      return res.json({
-        success: true,
-        message: "OTP Verified. You may now reset your password.",
-        token: resetToken
       });
     }
 
@@ -120,18 +167,16 @@ export const login = async (req, res) => {
     if (!match)
       return res.status(400).json({ message: "Invalid password" });
 
-    const otp = "1234";
-
-    const otpToken = generateToken(
-      { id: user._id, phoneNumber, otp, type: "login" },
-      "10m"
+    // ✅ Direct login token (NO OTP)
+    const token = generateToken(
+      { id: user._id, phoneNumber },
+      "7d"
     );
 
     res.json({
       success: true,
-      message: "Login successful. OTP sent!",
-      otp,
-      token: otpToken,
+      message: "Login successful",
+      token,
       user
     });
 
@@ -139,8 +184,6 @@ export const login = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-
 // -----------------------------
 // FORGOT PASSWORD
 // -----------------------------
@@ -152,7 +195,21 @@ export const forgotPassword = async (req, res) => {
     if (!user)
       return res.status(400).json({ message: "Phone number not registered" });
 
-    const otp = "1234";
+    const otp = generateOTP();
+
+    // ✅ Send OTP
+await client.messages.create({
+  body: `Dear Customer,
+
+Your OTP for V FARM password reset is ${otp}.
+
+This OTP is valid for 10 minutes. Please do not share it with anyone.
+
+Regards,  
+V FARM Team`,
+  from: twilioPhone,
+  to: `+91${phoneNumber}`,
+});
 
     const otpToken = generateToken(
       { phoneNumber, otp, type: "forgot" },
@@ -162,7 +219,6 @@ export const forgotPassword = async (req, res) => {
     res.json({
       success: true,
       message: "OTP sent for password reset",
-      otp,
       token: otpToken
     });
 
@@ -170,7 +226,6 @@ export const forgotPassword = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 // -----------------------------
 // RESET PASSWORD

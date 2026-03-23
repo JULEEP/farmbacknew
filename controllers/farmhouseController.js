@@ -726,10 +726,8 @@ export const getNearbyFarmhouses = async (req, res) => {
       });
     }
 
-    // Convert 100 km to meters for $geoWithin / $nearSphere
-    const maxDistance = 100000; // 100 km in meters
+    const maxDistance = 100000;
 
-    // Single query to fetch all farmhouses within 100 km
     let farmhouses = await Farmhouse.find({
       location: {
         $nearSphere: {
@@ -740,37 +738,76 @@ export const getNearbyFarmhouses = async (req, res) => {
       active: true
     }).lean();
 
-    // Filter by inactiveDates if date provided
+    // -------------------------------
+    // DATE FILTER (inactive dates)
+    // -------------------------------
     if (date) {
       const searchDate = new Date(date);
       searchDate.setHours(0, 0, 0, 0);
 
       farmhouses = farmhouses.filter(fh => {
-        const isInactive = fh.inactiveDates?.some(inactiveDate => {
+        return !(fh.inactiveDates || []).some(inactiveDate => {
           const inactiveDateObj = new Date(inactiveDate.date);
           inactiveDateObj.setHours(0, 0, 0, 0);
+
           return inactiveDateObj.getTime() === searchDate.getTime();
         });
-        return !isInactive;
       });
     }
 
-    // Enrich with availability info if date provided
+    // -------------------------------
+    // SLOT LEVEL FILTER (IMPORTANT FIX)
+    // -------------------------------
     if (date) {
-      farmhouses = await Promise.all(farmhouses.map(async farmhouse => {
-        const availableSlots = await calculateAvailableSlots(farmhouse, date);
+      const searchDate = new Date(date);
+      searchDate.setHours(0, 0, 0, 0);
+
+      farmhouses = farmhouses.map(fh => {
+        const bookedSlots = fh.bookedSlots || [];
+        const timePrices = fh.timePrices || [];
+
+        const availableTimePrices = timePrices.filter(slot => {
+          const isBooked = bookedSlots.some(booked => {
+            const bookedDate = new Date(booked.date);
+            bookedDate.setHours(0, 0, 0, 0);
+
+            return (
+              bookedDate.getTime() === searchDate.getTime() &&
+              booked.label === slot.label
+            );
+          });
+
+          return !isBooked; // remove booked slot only
+        });
+
         return {
-          ...farmhouse,
-          availableSlots: availableSlots.length,
-          isAvailableToday: availableSlots.length > 0
+          ...fh,
+          timePrices: availableTimePrices
         };
-      }));
+      });
+    }
+
+    // -------------------------------
+    // Availability enrichment
+    // -------------------------------
+    if (date) {
+      farmhouses = await Promise.all(
+        farmhouses.map(async (farmhouse) => {
+          const availableSlots = await calculateAvailableSlots(farmhouse, date);
+
+          return {
+            ...farmhouse,
+            availableSlots: availableSlots.length,
+            isAvailableToday: availableSlots.length > 0
+          };
+        })
+      );
     }
 
     res.json({
       success: true,
       userLocation: { lat, lng },
-      date: date || 'Not specified',
+      date: date || "Not specified",
       count: farmhouses.length,
       farmhouses
     });

@@ -28,7 +28,7 @@ const router = express.Router();
 /* ===================================================== 
    FARMHOUSE CRUD 
 ===================================================== */
-router.post("/farmhouse-create", upload.array("images", 10), createFarmhouse);
+router.post("/farmhouse-create", upload.array("images", 15), createFarmhouse);
 
 // New admin control routes
 router.put("/:farmhouseId/toggle-active", toggleActiveStatus);
