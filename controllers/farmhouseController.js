@@ -23,8 +23,7 @@ export const createFarmhouse = async (req, res) => {
       address,
       description,
       amenities,
-      pricePerHour,
-      pricePerDay,
+      price, // 🔥 Single price field
       rating,
       feedbackSummary,
       bookingFor,
@@ -38,22 +37,14 @@ export const createFarmhouse = async (req, res) => {
       return res.status(400).json({ message: "Name & Address required" });
     }
 
-    if (!address || !address.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Address is required"
-      });
-    }
-
     if (!lat || !lng) {
       return res.status(400).json({ message: "Lat & Lng required" });
     }
 
-    // Validate pricePerHour is required
-    if (!pricePerHour || isNaN(Number(pricePerHour))) {
+    if (!price || isNaN(Number(price))) {
       return res.status(400).json({
         success: false,
-        message: "Valid pricePerHour is required"
+        message: "Valid price is required"
       });
     }
 
@@ -70,54 +61,41 @@ export const createFarmhouse = async (req, res) => {
       }
     }
 
-    // Parse and validate timePrices - NO PRICE VALIDATION
+    // 🔥 Parse timePrices (NO calculation)
     let parsedTimePrices = [];
-if (timePrices && (typeof timePrices === 'string' ? timePrices.trim() : true)) {      try {
-parsedTimePrices = typeof timePrices === 'string' ? JSON.parse(timePrices) : timePrices;
+    if (timePrices && (typeof timePrices === 'string' ? timePrices.trim() : true)) {
+      try {
+        parsedTimePrices = typeof timePrices === 'string'
+          ? JSON.parse(timePrices)
+          : timePrices;
 
-        // Validate each time slot (ONLY label and timing)
         parsedTimePrices.forEach((slot, index) => {
           if (!slot.label || !slot.timing) {
             throw new Error(`Time slot ${index + 1}: Missing label or timing`);
           }
 
-          // Validate timing format
-          const timeRangeRegex = /^(\d{1,2}(:\d{2})?[ap]m)\s*-\s*(\d{1,2}(:\d{2})?[ap]m)$/i;
-          if (!timeRangeRegex.test(slot.timing.trim())) {
-            throw new Error(
-              `Time slot ${index + 1}: Invalid format "${slot.timing}". Use "9am-8pm" or "9:30am-5:30pm"`
-            );
-          }
-
-          // Calculate price based on pricePerHour and duration
-          const [startTime, endTime] = slot.timing.split('-').map(s => s.trim());
-          const duration = calculateDuration(startTime, endTime);
-          const calculatedPrice = Math.round(Number(pricePerHour) * duration);
-
-          // Add calculated price to slot
-          slot.price = calculatedPrice;
-          slot.duration = duration;
+          // Just store same price in every slot
+          slot.price = Number(price);
         });
 
-        console.log("✅ Parsed timePrices with calculated prices:", parsedTimePrices);
       } catch (error) {
         return res.status(400).json({
           success: false,
           message: `Invalid timePrices format: ${error.message}`,
-          expectedFormat: '[{"label": "Slot Name", "timing": "9am-8pm"}]' // Removed price from example
+          expectedFormat: '[{"label": "Morning", "timing": "9am-8pm"}]'
         });
       }
     }
 
-    // Parse amenities if provided
+    // Parse amenities
     let amenitiesArray = [];
- if (amenities) {
-  if (typeof amenities === 'string') {
-    amenitiesArray = amenities.split(',').map(item => item.trim()).filter(item => item);
-  } else if (Array.isArray(amenities)) {
-    amenitiesArray = amenities;
-  }
-}
+    if (amenities) {
+      if (typeof amenities === 'string') {
+        amenitiesArray = amenities.split(',').map(item => item.trim()).filter(Boolean);
+      } else if (Array.isArray(amenities)) {
+        amenitiesArray = amenities;
+      }
+    }
 
     const farmhouse = await Farmhouse.create({
       name,
@@ -125,8 +103,7 @@ parsedTimePrices = typeof timePrices === 'string' ? JSON.parse(timePrices) : tim
       address,
       description,
       amenities: amenitiesArray,
-      pricePerHour: Number(pricePerHour),
-      pricePerDay: pricePerDay ? Number(pricePerDay) : null,
+      price: Number(price), // 🔥 Single price field
       rating: rating ? Number(rating) : 0,
       feedbackSummary,
       bookingFor,
@@ -138,33 +115,20 @@ parsedTimePrices = typeof timePrices === 'string' ? JSON.parse(timePrices) : tim
       }
     });
 
-
-
-    // Generate automatic vendor credentials for farmhouse creator
+    // 🔥 Vendor Creation (UNCHANGED)
     let vendorCredentials = null;
+
     try {
-      // Remove special characters and spaces
       const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-
-      // Take first 3 letters
       const firstThreeLetters = cleanName.substring(0, 3);
-
-      // Fallback if name too short
       const vendorNameBase = firstThreeLetters || cleanName.substring(0, 9);
 
-
-      // Get first 6 characters of farmhouse ID
       const farmhouseIdStr = farmhouse._id.toString();
       const idPrefix = farmhouseIdStr.substring(0, 6);
 
-      // Create vendor name and password (same as username)
       const vendorName = `${vendorNameBase}${idPrefix}`;
-      const password = `${vendorNameBase}${idPrefix}`;
+      const password = vendorName;
 
-      // DEBUG: Check if Vendor model is available
-      console.log("🔍 Vendor model available:", Vendor ? "YES" : "NO");
-
-      // Create vendor entry in the database
       const vendor = new Vendor({
         name: vendorName,
         password: password,
@@ -172,28 +136,19 @@ parsedTimePrices = typeof timePrices === 'string' ? JSON.parse(timePrices) : tim
         farmhouseName: name
       });
 
-      // Save to database
       await vendor.save();
-
-      console.log("✅ Vendor saved to database:", vendor);
 
       vendorCredentials = {
         name: vendorName,
         password: password,
         vendorId: vendor._id,
-        farmhouseId: farmhouse._id,
-        message: "Use these credentials to login as vendor. Credentials are stored in vendors collection."
+        farmhouseId: farmhouse._id
       };
 
     } catch (credentialError) {
-      console.error("❌ Error creating vendor credentials:", credentialError);
-      console.error("❌ Full error:", credentialError);
-
-      // Don't fail the farmhouse creation if vendor creation fails
       vendorCredentials = {
-        error: "Could not create vendor credentials automatically",
-        details: credentialError.message,
-        note: "Please create vendor credentials manually"
+        error: "Vendor creation failed",
+        details: credentialError.message
       };
     }
 
@@ -201,14 +156,13 @@ parsedTimePrices = typeof timePrices === 'string' ? JSON.parse(timePrices) : tim
       success: true,
       message: "Farmhouse created successfully",
       farmhouse,
-      vendorCredentials: vendorCredentials
-
+      vendorCredentials
     });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 // Helper function to calculate duration in hours
 function calculateDuration(startTime, endTime) {
   const startMinutes = convertToMinutes(startTime);
@@ -527,10 +481,7 @@ export const updateFarmhouse = async (req, res) => {
     const farmhouse = await Farmhouse.findById(farmhouseId);
 
     if (!farmhouse) {
-      return res.status(404).json({
-        success: false,
-        message: "Farmhouse not found"
-      });
+      return res.status(404).json({ success: false, message: "Farmhouse not found" });
     }
 
     const {
@@ -538,8 +489,7 @@ export const updateFarmhouse = async (req, res) => {
       address,
       description,
       amenities,
-      pricePerHour,
-      pricePerDay,
+      price, // 🔥 Single price field
       rating,
       feedbackSummary,
       bookingFor,
@@ -549,10 +499,9 @@ export const updateFarmhouse = async (req, res) => {
       lng
     } = req.body;
 
-    // Prepare update object
     const updateData = {};
 
-    // Handle basic fields
+    // Basic fields
     if (name !== undefined) updateData.name = name;
     if (address !== undefined) updateData.address = address;
     if (description !== undefined) updateData.description = description;
@@ -561,21 +510,16 @@ export const updateFarmhouse = async (req, res) => {
     if (bookingFor !== undefined) updateData.bookingFor = bookingFor;
     if (active !== undefined) updateData.active = active === true || active === 'true';
 
-    // Handle pricePerDay
-    if (pricePerDay !== undefined) {
-      updateData.pricePerDay = pricePerDay ? Number(pricePerDay) : null;
-    }
-
-    // Handle amenities
+    // Amenities
     if (amenities !== undefined) {
       if (typeof amenities === 'string' && amenities.trim()) {
-        updateData.amenities = amenities.split(',').map(item => item.trim()).filter(item => item);
+        updateData.amenities = amenities.split(',').map(item => item.trim()).filter(Boolean);
       } else if (Array.isArray(amenities)) {
         updateData.amenities = amenities;
       }
     }
 
-    // Handle location coordinates
+    // Location
     if (lat !== undefined && lng !== undefined) {
       updateData.location = {
         type: "Point",
@@ -583,30 +527,20 @@ export const updateFarmhouse = async (req, res) => {
       };
     }
 
-    // Handle pricePerHour and timePrices calculation
-    let newPricePerHour = farmhouse.pricePerHour;
-    if (pricePerHour !== undefined) {
-      newPricePerHour = Number(pricePerHour);
-      updateData.pricePerHour = newPricePerHour;
-    }
-
-    // Handle images
-    let newImages = farmhouse.images;
+    // Images
     if (req.files && req.files.length > 0) {
-      // Delete old images from cloudinary if they exist
       if (farmhouse.images && farmhouse.images.length > 0) {
         for (const img of farmhouse.images) {
           try {
             const publicId = img.split("/").pop().split(".")[0];
             await cloudinary.uploader.destroy(`farmhouses/${publicId}`);
-          } catch (error) {
-            console.warn("Failed to delete old image:", error.message);
+          } catch (err) {
+            console.warn("Failed to delete old image:", err.message);
           }
         }
       }
 
-      // Upload new images
-      newImages = [];
+      const newImages = [];
       for (const file of req.files) {
         const uploaded = await new Promise((resolve, reject) => {
           cloudinary.uploader.upload_stream(
@@ -619,70 +553,53 @@ export const updateFarmhouse = async (req, res) => {
       updateData.images = newImages;
     }
 
-    // Handle timePrices
+    // 🔥 Handle price
+    if (price !== undefined) {
+      updateData.price = Number(price); // ✅ update top-level price
+
+      // Update all existing timePrices slots
+      if (farmhouse.timePrices && farmhouse.timePrices.length > 0) {
+        const updatedSlots = farmhouse.timePrices.map(slot => ({
+          ...slot.toObject(),
+          price: Number(price)
+        }));
+        updateData.timePrices = updatedSlots;
+      }
+    }
+
+    // Handle explicit timePrices array (overwrite slots)
     if (timePrices !== undefined) {
       try {
-        let parsedTimePrices;
+        const parsedTimePrices = typeof timePrices === 'string' ? JSON.parse(timePrices) : timePrices;
 
-        // Parse timePrices if it's a string
-        if (typeof timePrices === 'string') {
-          parsedTimePrices = JSON.parse(timePrices);
-        } else if (Array.isArray(timePrices)) {
-          parsedTimePrices = timePrices;
-        } else {
-          throw new Error("timePrices must be a JSON string or array");
-        }
-
-        // Validate and calculate prices for each time slot
         const validatedTimePrices = parsedTimePrices.map((slot, index) => {
           if (!slot.label || !slot.timing) {
             throw new Error(`Time slot ${index + 1}: Missing label or timing`);
           }
 
-          // Validate timing format
-          const timeRangeRegex = /^(\d{1,2}(:\d{2})?[ap]m)\s*-\s*(\d{1,2}(:\d{2})?[ap]m)$/i;
-          if (!timeRangeRegex.test(slot.timing.trim())) {
-            throw new Error(
-              `Time slot ${index + 1}: Invalid format "${slot.timing}". Use "9am-8pm" or "9:30am-5:30pm"`
-            );
-          }
-
-          // Calculate price based on current pricePerHour
-          const [startTime, endTime] = slot.timing.split('-').map(s => s.trim());
-          const duration = calculateDuration(startTime, endTime);
-          const calculatedPrice = Math.round(newPricePerHour * duration);
+          // Use top-level price if available
+          const slotPrice = price !== undefined ? Number(price) : Number(slot.price);
 
           return {
             label: slot.label.trim(),
             timing: slot.timing.trim(),
-            price: calculatedPrice,
-            duration: duration
+            price: slotPrice,
+            isActive: slot.isActive !== undefined ? slot.isActive : true,
+            inactiveDates: Array.isArray(slot.inactiveDates) ? slot.inactiveDates : []
           };
         });
 
         updateData.timePrices = validatedTimePrices;
-      } catch (error) {
+      } catch (err) {
         return res.status(400).json({
           success: false,
-          message: `Invalid timePrices: ${error.message}`,
-          expectedFormat: '[{"label": "Slot Name", "timing": "9am-8pm"}]'
+          message: `Invalid timePrices: ${err.message}`,
+          expectedFormat: '[{"label": "Morning", "timing": "9am-8pm"}]'
         });
       }
-    } else if (pricePerHour !== undefined && farmhouse.timePrices && farmhouse.timePrices.length > 0) {
-      // If pricePerHour changed but timePrices wasn't provided, recalculate existing timePrices
-      const recalculatedTimePrices = farmhouse.timePrices.map(slot => {
-        const [startTime, endTime] = slot.timing.split('-').map(s => s.trim());
-        const duration = calculateDuration(startTime, endTime);
-        return {
-          ...slot,
-          price: Math.round(newPricePerHour * duration),
-          duration: duration
-        };
-      });
-      updateData.timePrices = recalculatedTimePrices;
     }
 
-    // Update the farmhouse
+    // Update farmhouse
     const updatedFarmhouse = await Farmhouse.findByIdAndUpdate(
       farmhouseId,
       { $set: updateData },
@@ -694,6 +611,7 @@ export const updateFarmhouse = async (req, res) => {
       message: "Farmhouse updated successfully",
       farmhouse: updatedFarmhouse
     });
+
   } catch (err) {
     console.error("Update farmhouse error:", err);
     res.status(500).json({
@@ -702,7 +620,6 @@ export const updateFarmhouse = async (req, res) => {
     });
   }
 };
-
 // Helper function to validate time range format
 function isValidTimeRange(timeStr) {
   const timeRangeRegex = /^(\d{1,2}(:\d{2})?[ap]m)\s*-\s*(\d{1,2}(:\d{2})?[ap]m)$/i;
@@ -795,7 +712,7 @@ export const getUserWishlists = async (req, res) => {
 export const getNearbyFarmhouses = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { date, maxDistance = 5000 } = req.query; // Add date parameter
+    const { date } = req.query;
 
     const user = await User.findById(userId);
     if (!user) {
@@ -809,33 +726,31 @@ export const getNearbyFarmhouses = async (req, res) => {
       });
     }
 
-    // Build base query
-    const query = {
+    // Convert 100 km to meters for $geoWithin / $nearSphere
+    const maxDistance = 100000; // 100 km in meters
+
+    // Single query to fetch all farmhouses within 100 km
+    let farmhouses = await Farmhouse.find({
       location: {
-        $near: {
+        $nearSphere: {
           $geometry: { type: "Point", coordinates: [lng, lat] },
-          $maxDistance: parseInt(maxDistance)
+          $maxDistance: maxDistance
         }
       },
-      active: true // Only show active farmhouses
-    };
+      active: true
+    }).lean();
 
-    // Find farmhouses
-    let farmhouses = await Farmhouse.find(query).lean();
-
-    // If date is provided, check inactive dates
+    // Filter by inactiveDates if date provided
     if (date) {
       const searchDate = new Date(date);
       searchDate.setHours(0, 0, 0, 0);
 
-      farmhouses = farmhouses.filter(farmhouse => {
-        // Check if farmhouse is inactive on this date
-        const isInactive = farmhouse.inactiveDates?.some(inactiveDate => {
+      farmhouses = farmhouses.filter(fh => {
+        const isInactive = fh.inactiveDates?.some(inactiveDate => {
           const inactiveDateObj = new Date(inactiveDate.date);
           inactiveDateObj.setHours(0, 0, 0, 0);
           return inactiveDateObj.getTime() === searchDate.getTime();
         });
-
         return !isInactive;
       });
     }
@@ -843,9 +758,7 @@ export const getNearbyFarmhouses = async (req, res) => {
     // Enrich with availability info if date provided
     if (date) {
       farmhouses = await Promise.all(farmhouses.map(async farmhouse => {
-        // Calculate available slots for this date
         const availableSlots = await calculateAvailableSlots(farmhouse, date);
-
         return {
           ...farmhouse,
           availableSlots: availableSlots.length,
@@ -861,11 +774,11 @@ export const getNearbyFarmhouses = async (req, res) => {
       count: farmhouses.length,
       farmhouses
     });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 
 // ============================================
 // GET NEARBY FARMHOUSES (without location - shows all)

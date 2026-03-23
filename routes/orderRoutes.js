@@ -12,7 +12,8 @@ import {
   getPaymentById,
   getPaymentStatistics,
   getUserPayments,
-  getRevenueAnalytics
+  getRevenueAnalytics,
+  deleteBooking
 } from "../controllers/orderController.js";
 
 const router = express.Router();
@@ -44,5 +45,7 @@ router.get('/payments/:paymentId', getPaymentById);
 router.get('/users/:userId/payments', getUserPayments);
 
 router.get("/revenue", getRevenueAnalytics);
+router.delete('/deletebooking/:bookingId', deleteBooking);
+
 
 export default router;

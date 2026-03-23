@@ -547,7 +547,7 @@ export const createBooking = async (req, res) => {
 export const getUserBookings = async (req, res) => {
   try {
     const { userId, status } = req.query;
-    
+
     // Validate required fields
     if (!userId) {
       return res.status(400).json({
@@ -572,174 +572,160 @@ export const getUserBookings = async (req, res) => {
       });
     }
 
-    // Get current date for comparison
     const currentDate = new Date();
-    
+
     // Build query based on status
     let query = { userId: userId };
-    let statusFilter = 'all'; // Default
-    
-    // IMPORTANT: Use bookingDetails.checkIn based on your Booking model schema
-    switch(status) {
-      case 'upcoming':
-        query['bookingDetails.checkIn'] = { $gt: currentDate };
-        statusFilter = 'upcoming';
+    let statusFilter = "all";
+
+    switch (status) {
+      case "upcoming":
+        query["bookingDetails.checkIn"] = { $gt: currentDate };
+        statusFilter = "upcoming";
         break;
-        
-      case 'completed':
-        query['bookingDetails.checkOut'] = { $lt: currentDate };
-        query.status = { $ne: 'cancelled' }; // Note: lowercase 'cancelled' from your model
-        statusFilter = 'completed';
+      case "completed":
+        query["bookingDetails.checkOut"] = { $lt: currentDate };
+        query.status = { $ne: "cancelled" };
+        statusFilter = "completed";
         break;
-        
-      case 'canceled':
-        query.status = 'cancelled'; // Note: lowercase 'cancelled' from your model
-        statusFilter = 'canceled';
+      case "canceled":
+        query.status = "cancelled";
+        statusFilter = "canceled";
         break;
-        
-      case 'active':
-        query['bookingDetails.checkIn'] = { $lte: currentDate };
-        query['bookingDetails.checkOut'] = { $gte: currentDate };
-        query.status = { $ne: 'cancelled' }; // Note: lowercase 'cancelled' from your model
-        statusFilter = 'active';
+      case "active":
+        query["bookingDetails.checkIn"] = { $lte: currentDate };
+        query["bookingDetails.checkOut"] = { $gte: currentDate };
+        query.status = { $ne: "cancelled" };
+        statusFilter = "active";
         break;
-        
       default:
-        // Get all bookings, no additional filters
         break;
     }
 
     console.log(`📋 Fetching ${statusFilter} bookings for user ${userId}`);
-    
-    // Fetch bookings with populated farmhouse details
+
+    // Fetch bookings with farmhouse location included
     const bookings = await Booking.find(query)
-      .populate('farmhouseId', 'name address images rating')
-      .populate('userId', 'name email phone')
-      .sort({ 'bookingDetails.checkIn': 1 }) // Sort by check-in time
+      .populate("farmhouseId", "name address images rating location") // ✅ location added
+      .populate("userId", "name email phone")
+      .sort({ "bookingDetails.checkIn": 1 })
       .lean();
 
     console.log(`✅ Found ${bookings.length} bookings`);
 
     // Process bookings to add calculated fields
-    const processedBookings = bookings.map(booking => {
-      // IMPORTANT: Use bookingDetails instead of slotDetails
+    const processedBookings = bookings.map((booking) => {
       const checkInDate = new Date(booking.bookingDetails?.checkIn || booking.createdAt);
       const checkOutDate = new Date(booking.bookingDetails?.checkOut || booking.createdAt);
-      
-      // Use status from model (not bookingStatus)
-      let bookingStatus = booking.status || 'pending';
-      
-      if (bookingStatus !== 'cancelled') {
-        if (checkOutDate < currentDate) {
-          bookingStatus = 'completed';
-        } else if (checkInDate <= currentDate && checkOutDate >= currentDate) {
-          bookingStatus = 'active';
-        } else if (checkInDate > currentDate) {
-          bookingStatus = 'upcoming';
-        }
+
+      let bookingStatus = booking.status || "pending";
+
+      if (bookingStatus !== "cancelled") {
+        if (checkOutDate < currentDate) bookingStatus = "completed";
+        else if (checkInDate <= currentDate && checkOutDate >= currentDate) bookingStatus = "active";
+        else if (checkInDate > currentDate) bookingStatus = "upcoming";
       }
 
-      // Calculate time remaining/elapsed
       let timeInfo = {};
-      if (bookingStatus === 'upcoming') {
-        const timeDiff = checkInDate.getTime() - currentDate.getTime();
+      if (bookingStatus === "upcoming") {
+        const timeDiff = checkInDate - currentDate;
         const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
         const hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        
-        timeInfo = {
-          timeRemaining: `${days} days, ${hours} hours`,
-          startsIn: timeDiff
-        };
-      } else if (bookingStatus === 'completed') {
-        const timeDiff = currentDate.getTime() - checkOutDate.getTime();
+        timeInfo = { timeRemaining: `${days} days, ${hours} hours`, startsIn: timeDiff };
+      } else if (bookingStatus === "completed") {
+        const timeDiff = currentDate - checkOutDate;
         const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
-        
-        timeInfo = {
-          completedAgo: `${days} days ago`,
-          completedDays: days
-        };
+        timeInfo = { completedAgo: `${days} days ago`, completedDays: days };
       }
 
-      // Check if user can cancel (only upcoming bookings within cancellation window)
-      const canCancel = bookingStatus === 'upcoming' && 
-                       (checkInDate.getTime() - currentDate.getTime()) > 2 * 60 * 60 * 1000; // 2 hours before
+      const canCancel =
+        bookingStatus === "upcoming" &&
+        checkInDate.getTime() - currentDate.getTime() > 2 * 60 * 60 * 1000;
+      const canReschedule = bookingStatus === "upcoming";
 
-      // Check if user can reschedule (only upcoming bookings)
-      const canReschedule = bookingStatus === 'upcoming';
+      // Extract latitude & longitude
+      const longitude = booking.farmhouseId?.location?.coordinates?.[0] || null;
+      const latitude = booking.farmhouseId?.location?.coordinates?.[1] || null;
+
+      // ✅ Add static mobile field under location
+      const locationWithMobile = booking.farmhouseId?.location
+        ? {
+            ...booking.farmhouseId.location,
+            mobile: "+91 96663 17749"
+          }
+        : null;
 
       return {
         ...booking,
-        bookingStatus: bookingStatus,
-        isActive: bookingStatus === 'active',
-        isUpcoming: bookingStatus === 'upcoming',
-        isCompleted: bookingStatus === 'completed',
-        isCanceled: bookingStatus === 'cancelled',
+        farmhouseId: {
+          ...booking.farmhouseId,
+          latitude,
+          longitude,
+          location: locationWithMobile
+        },
+        bookingStatus,
+        isActive: bookingStatus === "active",
+        isUpcoming: bookingStatus === "upcoming",
+        isCompleted: bookingStatus === "completed",
+        isCanceled: bookingStatus === "cancelled",
         timeInfo,
         actions: {
           canCancel,
           canReschedule,
-          canGenerateQR: bookingStatus === 'upcoming' || bookingStatus === 'active',
-          canLeaveReview: bookingStatus === 'completed' && !booking.hasReviewed
+          canGenerateQR: bookingStatus === "upcoming" || bookingStatus === "active",
+          canLeaveReview: bookingStatus === "completed" && !booking.hasReviewed
         },
         formattedDates: {
-          checkIn: checkInDate.toLocaleString('en-IN', {
-            weekday: 'short',
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
+          checkIn: checkInDate.toLocaleString("en-IN", {
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
           }),
-          checkOut: checkOutDate.toLocaleString('en-IN', {
-            weekday: 'short',
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
+          checkOut: checkOutDate.toLocaleString("en-IN", {
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
           }),
-          bookingDate: new Date(booking.createdAt).toLocaleDateString('en-IN')
+          bookingDate: new Date(booking.createdAt).toLocaleDateString("en-IN")
         }
       };
     });
 
-    // Filter again after processing dynamic status (for status query)
     let filteredBookings = processedBookings;
-    if (status && ['upcoming', 'completed', 'active'].includes(status)) {
-      filteredBookings = processedBookings.filter(booking => 
-        booking.bookingStatus === status
-      );
+    if (status && ["upcoming", "completed", "active"].includes(status)) {
+      filteredBookings = processedBookings.filter((b) => b.bookingStatus === status);
     }
 
-    // Calculate summary statistics
     const summary = {
       total: processedBookings.length,
-      upcoming: processedBookings.filter(b => b.bookingStatus === 'upcoming').length,
-      active: processedBookings.filter(b => b.bookingStatus === 'active').length,
-      completed: processedBookings.filter(b => b.bookingStatus === 'completed').length,
-      canceled: processedBookings.filter(b => b.bookingStatus === 'cancelled').length,
+      upcoming: processedBookings.filter((b) => b.bookingStatus === "upcoming").length,
+      active: processedBookings.filter((b) => b.bookingStatus === "active").length,
+      completed: processedBookings.filter((b) => b.bookingStatus === "completed").length,
+      canceled: processedBookings.filter((b) => b.bookingStatus === "cancelled").length,
       totalSpent: processedBookings
-        .filter(b => b.bookingStatus !== 'cancelled')
-        .reduce((sum, booking) => sum + (booking.totalAmount || 0), 0)
+        .filter((b) => b.bookingStatus !== "cancelled")
+        .reduce((sum, b) => sum + (b.totalAmount || 0), 0)
     };
 
-    const response = {
+    res.json({
       success: true,
-      message: `Bookings retrieved successfully`,
+      message: "Bookings retrieved successfully",
       summary,
       filters: {
-        requested: status || 'all',
+        requested: status || "all",
         applied: statusFilter,
         count: filteredBookings.length
       },
       bookings: filteredBookings
-    };
-
-    res.json(response);
-
+    });
   } catch (err) {
     console.error("❌ Error fetching user bookings:", err);
-    
     res.status(500).json({
       success: false,
       message: "Internal server error while fetching bookings",
@@ -747,7 +733,6 @@ export const getUserBookings = async (req, res) => {
     });
   }
 };
-
 
 // =====================================================
 // CANCEL BOOKING WITH REFUND
@@ -3850,6 +3835,52 @@ export const getRevenueAnalytics = async (req, res) => {
       message: "Failed to generate revenue analytics",
       error: err.message,
       stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+};
+
+
+
+export const deleteBooking = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    if (!bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: "Booking ID is required"
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(bookingId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking ID format"
+      });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found"
+      });
+    }
+
+    await Booking.findByIdAndDelete(bookingId);
+
+    res.json({
+      success: true,
+      message: "Booking deleted successfully",
+      bookingId
+    });
+
+  } catch (err) {
+    console.error("❌ Error deleting booking:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete booking",
+      error: err.message
     });
   }
 };

@@ -59,8 +59,8 @@ const farmhouseSchema = new mongoose.Schema({
   amenities: [String],
   bookingFor: String,
 
-  pricePerHour: Number,
-  pricePerDay: Number,
+
+  price: Number,
 
   timePrices: [timePriceSchema], // Available slots
   
