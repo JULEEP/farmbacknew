@@ -32,27 +32,27 @@ export const register = async (req, res) => {
       confirmPassword
     } = req.body;
 
-    if (!firstName || !lastName || !email || !phoneNumber || !password || !confirmPassword)
+    if (!firstName || !lastName || !email || !phoneNumber || !password || !confirmPassword) {
       return res.status(400).json({ message: "All fields required" });
+    }
 
-    if (password !== confirmPassword)
+    if (password !== confirmPassword) {
       return res.status(400).json({ message: "Passwords do not match" });
+    }
 
     const exists = await User.findOne({ phoneNumber });
-    if (exists)
+    if (exists) {
       return res.status(400).json({ message: "Phone number already registered" });
+    }
 
     const otp = generateOTP();
 
-    // ✅ DO NOT SAVE USER IN DB YET
-
-    // Send OTP
     await client.messages.create({
-      body: `Dear Customer,
+      body: `Dear User,
 
-Your OTP for V FARM verification is ${otp}.
+Your OTP for V FARM registration is ${otp}.
 
-This OTP is valid for 10 minutes.
+Do not share this OTP with anyone.
 
 Regards,
 V FARM Team`,
@@ -60,7 +60,6 @@ V FARM Team`,
       to: `+91${phoneNumber}`,
     });
 
-    // store EVERYTHING temporarily in token
     const token = generateToken(
       {
         firstName,
@@ -76,7 +75,7 @@ V FARM Team`,
 
     res.json({
       success: true,
-      message: "OTP sent successfully",
+      message: "OTP sent for registration",
       token
     });
 
@@ -91,19 +90,20 @@ export const verifyOtp = async (req, res) => {
   try {
     const { token, otp } = req.body;
 
-    if (!token || !otp)
+    if (!token || !otp) {
       return res.status(400).json({ message: "Token & OTP required" });
+    }
 
     const decoded = verifyToken(token);
 
-    if (decoded.otp !== otp)
+    if (decoded.otp !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });
+    }
 
-    // -----------------------------
+    // -----------------------
     // REGISTER FLOW
-    // -----------------------------
+    // -----------------------
     if (decoded.type === "register") {
-
       const hashedPassword = await bcrypt.hash(decoded.password, 10);
 
       const user = await User.create({
@@ -128,10 +128,10 @@ export const verifyOtp = async (req, res) => {
       });
     }
 
-    // -----------------------------
-    // LOGIN FLOW (same as before)
-    // -----------------------------
-    if (decoded.type === "login" || decoded.type === "forgot") {
+    // -----------------------
+    // LOGIN FLOW
+    // -----------------------
+    if (decoded.type === "login") {
       const finalToken = generateToken(
         { id: decoded.id, phoneNumber: decoded.phoneNumber },
         "7d"
@@ -139,18 +139,36 @@ export const verifyOtp = async (req, res) => {
 
       return res.json({
         success: true,
-        message: "OTP Verified Successfully",
+        message: "Login successful",
         token: finalToken
       });
     }
 
-    res.status(400).json({ message: "Invalid OTP flow" });
+    // -----------------------
+    // FORGOT PASSWORD → IMPORTANT FIX
+    // -----------------------
+    if (decoded.type === "forgot") {
+      const resetToken = generateToken(
+        {
+          phoneNumber: decoded.phoneNumber,
+          type: "reset"
+        },
+        "15m"
+      );
+
+      return res.json({
+        success: true,
+        message: "OTP verified. You can reset password now.",
+        token: resetToken
+      });
+    }
+
+    return res.status(400).json({ message: "Invalid OTP flow" });
 
   } catch (err) {
     res.status(500).json({ message: "Invalid or expired token" });
   }
 };
-
 
 // -----------------------------
 // LOGIN
@@ -192,41 +210,44 @@ export const forgotPassword = async (req, res) => {
     const { phoneNumber } = req.body;
 
     const user = await User.findOne({ phoneNumber });
-    if (!user)
+    if (!user) {
       return res.status(400).json({ message: "Phone number not registered" });
+    }
 
     const otp = generateOTP();
 
-    // ✅ Send OTP
-await client.messages.create({
-  body: `Dear Customer,
+    await client.messages.create({
+      body: `Dear User,
 
 Your OTP for V FARM password reset is ${otp}.
 
-This OTP is valid for 10 minutes. Please do not share it with anyone.
+Valid for 10 minutes.
 
-Regards,  
+Regards,
 V FARM Team`,
-  from: twilioPhone,
-  to: `+91${phoneNumber}`,
-});
+      from: twilioPhone,
+      to: `+91${phoneNumber}`,
+    });
 
-    const otpToken = generateToken(
-      { phoneNumber, otp, type: "forgot" },
+    const token = generateToken(
+      {
+        phoneNumber,
+        otp,
+        type: "forgot"
+      },
       "10m"
     );
 
     res.json({
       success: true,
       message: "OTP sent for password reset",
-      token: otpToken
+      token
     });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 // -----------------------------
 // RESET PASSWORD
 // -----------------------------
@@ -234,13 +255,15 @@ export const resetPassword = async (req, res) => {
   try {
     const { token, newPassword, confirmNewPassword } = req.body;
 
-    if (newPassword !== confirmNewPassword)
+    if (newPassword !== confirmNewPassword) {
       return res.status(400).json({ message: "Passwords do not match" });
+    }
 
     const decoded = verifyToken(token);
 
-    if (decoded.type !== "reset")
+    if (decoded.type !== "reset") {
       return res.status(400).json({ message: "Invalid reset token" });
+    }
 
     const hashed = await bcrypt.hash(newPassword, 10);
 
@@ -258,7 +281,6 @@ export const resetPassword = async (req, res) => {
     res.status(500).json({ message: "Invalid or expired token" });
   }
 };
-
 
 // ------------------------
 // UPDATE PROFILE
