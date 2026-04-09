@@ -9,6 +9,7 @@ import cartRoutes from "./routes/cartRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import feeConfigRoutes from "./routes/feeConfigRoutes.js";
 import vendor from "./routes/vendor.js";
+import admin from "./routes/admin.js";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import { Booking } from "./models/bookingModel.js";
@@ -123,6 +124,7 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/order", orderRoutes);
 app.use("/api/fees", feeConfigRoutes);
 app.use("/api/vendor", vendor);
+app.use("/api/admin", admin);
 
 // MongoDB connection
 mongoose
