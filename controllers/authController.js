@@ -13,8 +13,14 @@ dotenv.config();
 
 
 
+// const accountSid = 'ACd37d269a71fda78661c1fd2a54a5b567';
+// const authToken = '7aa750ace9185c1850988f31a4e5b5fc';
+// const twilioPhone = '+16193309459';
+
+//edit ezy twiilloo
+///Twilio credentials varahi account
 const accountSid = 'ACd37d269a71fda78661c1fd2a54a5b567';
-const authToken = '7aa750ace9185c1850988f31a4e5b5fc';
+const authToken = 'b8b1e43c112040ffb454f8c7521422de'; // 🔒 Replace with actual
 const twilioPhone = '+16193309459';
 
 const client = twilio(accountSid, authToken);
