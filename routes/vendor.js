@@ -43,7 +43,10 @@ import {
   toggleFarmhouseActive,
   getInactiveDates,
   toggleSlotActive,
-  getVendorEarnings
+  getVendorEarnings,
+  deleteVendorAccount,
+  confirmDeleteVendor,
+  deleteVendorById
 } from "../controllers/vendorController.js";
 
 const router = express.Router();
@@ -80,5 +83,9 @@ router.get('/farmhouse/:vendorId/inactive-dates', getInactiveDates);
 
 // Slot management
 router.put('/farmhouse/:vendorId/slot/:slotId/toggle', toggleSlotActive);
+
+router.post('/delete-vendor-account', deleteVendorAccount);
+router.get('/confirm-delete-vendor/:token', confirmDeleteVendor);
+router.delete('/deletevendor/:vendorId', deleteVendorById);
 
 export default router;

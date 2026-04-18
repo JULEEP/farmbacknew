@@ -17,6 +17,9 @@ const vendorSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected', 'needs_modification'],
     default: 'pending'
   },
+
+  deleteToken: String,
+deleteTokenExpiration: Date,
   submittedData: {
     name: String,
     address: String,

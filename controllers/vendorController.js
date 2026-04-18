@@ -252,6 +252,19 @@ import { Farmhouse } from "../models/farmhouseModel.js";
 import { Booking } from "../models/bookingModel.js";
 import cloudinary from "../config/cloudinary.js";
 import mongoose from "mongoose";
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
+
+
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: "pms226803@gmail.com",
+    pass: "nrasbifqxsxzurrm",
+  },
+});
+
 
 // ============================================
 // VENDOR REGISTRATION
@@ -1208,5 +1221,127 @@ export const getVendorEarnings = async (req, res) => {
   } catch (err) {
     console.error("Get vendor earnings error:", err);
     res.status(500).json({ error: err.message });
+  }
+};
+
+
+
+export const deleteVendorAccount = async (req, res) => {
+  const { email, reason } = req.body;
+
+  if (!email || !reason) {
+    return res.status(400).json({
+      message: "Email and deletion reason are required",
+    });
+  }
+
+  try {
+    const vendor = await Vendor.findOne({ email });
+
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor not found" });
+    }
+
+    // Generate token
+    const token = crypto.randomBytes(20).toString("hex");
+    const deleteLink = `${process.env.BASE_URL}/confirm-delete-vendor/${token}`;
+
+    // Save token & expiry
+    vendor.deleteToken = token;
+    vendor.deleteTokenExpiration = Date.now() + 60 * 60 * 1000; // 1 hour
+    await vendor.save();
+
+    // Send email
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Confirm Vendor Account Deletion",
+      text: `Hi ${vendor.name || "Vendor"},
+
+We received your account deletion request.
+
+To confirm deletion, click the link below:
+${deleteLink}
+
+Reason:
+${reason}
+
+If you did not request this, please ignore this email.
+
+Regards,
+Your Team`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    return res.status(200).json({
+      message: "Deletion link sent. Please check your email.",
+    });
+
+  } catch (error) {
+    console.error("Vendor delete request error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+
+export const confirmDeleteVendor = async (req, res) => {
+  const { token } = req.params;
+
+  try {
+    const vendor = await Vendor.findOne({
+      deleteToken: token,
+      deleteTokenExpiration: { $gt: Date.now() },
+    });
+
+    if (!vendor) {
+      return res.status(404).json({
+        message: "Invalid or expired token",
+      });
+    }
+
+    await Vendor.findByIdAndDelete(vendor._id);
+
+    return res.status(200).json({
+      message: "Vendor account deleted successfully",
+    });
+
+  } catch (error) {
+    console.error("Confirm vendor delete error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+
+export const deleteVendorById = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+
+    // Check vendor exists
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) {
+      return res.status(404).json({
+        message: "Vendor not found",
+      });
+    }
+
+    // Optional: delete related data (if any)
+    // Example:
+    // await Farmhouse.deleteMany({ _id: vendor.farmhouseId });
+
+    // Delete vendor
+    await Vendor.findByIdAndDelete(vendorId);
+
+    return res.status(200).json({
+      message: "Vendor account deleted successfully",
+    });
+
+  } catch (error) {
+    console.error("Delete vendor error:", error);
+    return res.status(500).json({
+      message: "Server error",
+    });
   }
 };
