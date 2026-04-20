@@ -40,4 +40,9 @@ router.delete("/:userId/delete-address/:addressIndex", UserController.deleteAddr
 router.get("/:userId/all-addresses", UserController.getAllAddresses);
 router.post("/guestlogin", UserController.loginOrGuest);
 
+
+router.delete('/deleteuser/:userId', UserController.deleteUserAccount);  
+router.post('/deleteaccount', UserController.deleteAccount)
+router.get('/confirm-delete-account/:token', UserController.confirmDeleteAccount);
+
 export default router;

@@ -18,6 +18,9 @@ const bookingSchema = new mongoose.Schema({
   razorpayOrderId: String,
   razorpayPaymentId: String,
   razorpaySignature: String,
+
+  intendedAdvance: { type: Number, default: 0 },
+razorpayPaymentIds: { type: [String], default: [] },
   
   bookingDetails: {
     date: { type: Date, },

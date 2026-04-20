@@ -147,44 +147,39 @@ app.post(
         return res.status(404).send("Booking not found");
       }
 
-      // 🔥 IDEMPOTENCY CHECK (MOST IMPORTANT FIX)
-      if (booking.razorpayPaymentId === payment.id) {
+      // ✅ IDEMPOTENCY CHECK — array se check karo
+      if (booking.razorpayPaymentIds?.includes(payment.id)) {
         return res.json({ status: "duplicate ignored" });
       }
 
-     const paidAmount = Number(payment.amount) / 100;
+      const paidAmount = Number(payment.amount) / 100;
 
-// 🔥 ADD NOT REPLACE (THIS IS FIX)
-const advancePayment =
-  Number(booking.advancePayment || 0) + paidAmount;
+      // ✅ ADD karo — ab DB mein 0 hoga toh double count nahi hoga
+      const newAdvancePayment = Number(booking.advancePayment || 0) + paidAmount;
+      let remainingAmount = Number(booking.totalAmount) - newAdvancePayment;
+      remainingAmount = Math.max(0, Number(remainingAmount.toFixed(2)));
 
-let remainingAmount =
-  Number(booking.totalAmount) - advancePayment;
+      const isComplete = remainingAmount === 0;
+      const paymentStatus = isComplete
+        ? "paid"
+        : newAdvancePayment > 0
+          ? "partial"
+          : "pending";
 
-remainingAmount = Math.max(0, Number(remainingAmount.toFixed(2)));
+      // ✅ UPDATE
+      booking.advancePayment = newAdvancePayment;
+      booking.remainingAmount = remainingAmount;
+      booking.paymentStatus = paymentStatus;
+      booking.completePayment = isComplete;
+      booking.status = "confirmed";
+      booking.razorpayPaymentId = payment.id;           // ✅ purana field bhi update
+      booking.razorpayPaymentIds.push(payment.id);      // ✅ array mein push
 
-const isComplete = remainingAmount === 0;
+      await booking.save();
 
-const paymentStatus = isComplete
-  ? "paid"
-  : advancePayment > 0
-    ? "partial"
-    : "pending";
-
-// 🔥 UPDATE
-booking.advancePayment = advancePayment;
-booking.remainingAmount = remainingAmount;
-
-booking.paymentStatus = paymentStatus;
-booking.completePayment = isComplete;
-
-// 🔥 IMPORTANT FIX HERE
-booking.status = "confirmed";
-
-await booking.save();
       console.log("✅ PAYMENT UPDATED:", {
         bookingId,
-        advancePayment,
+        advancePayment: newAdvancePayment,
         remainingAmount,
         paymentStatus,
         completePayment: isComplete

@@ -599,13 +599,10 @@ export const createBooking = async (req, res) => {
 
     const totalAmount = (slot.price || 0) + (feeConfig.cleaningFee || 0) + (feeConfig.serviceFee || 0);
 
-    // ---------------- PAYMENT LOGIC ----------------
-    const advance = advancePayment; // user ne bheja ya default 0
-    const remaining = advance > 0 ? totalAmount - advance : 0;
-
-    const paymentStatus = "pending"; // Always pending initially
-    const bookingStatus = "pending"; // Will change only via webhook
-    const completePayment = false; // Not complete until webhook confirms
+    const advance = advancePayment;
+    const paymentStatus = "pending";
+    const bookingStatus = "pending";
+    const completePayment = false;
 
     // ---------------- CREATE BOOKING ----------------
     const bookingData = {
@@ -613,13 +610,15 @@ export const createBooking = async (req, res) => {
       farmhouseId,
       razorpayOrderId: null,
       razorpayPaymentId: null,
+      razorpayPaymentIds: [],          // ✅ naya field
       bookingDetails: { date: bookingDateForDB, label: slot.label, timing: slot.timing, checkIn, checkOut },
       slotPrice: slot.price,
       cleaningFee: feeConfig.cleaningFee,
       serviceFee: feeConfig.serviceFee,
       totalAmount,
-      advancePayment: advance,
-      remainingAmount: remaining,
+      intendedAdvance: advance,        // ✅ user ka intent
+      advancePayment: 0,               // ✅ 0 rakho, webhook set karega
+      remainingAmount: totalAmount,    // ✅ poora amount remaining
       completePayment,
       paymentStatus,
       status: bookingStatus,
@@ -652,36 +651,35 @@ export const createBooking = async (req, res) => {
     session.endSession();
 
     // ---------------- RESPONSE ----------------
-  res.json({
-  success: true,
-  message: "Booking created successfully (pending payment)",
-  bookingId: createdBooking._id,
-  bookingDetails: {
-    bookingId: createdBooking._id,
-    farmhouseName: farmhouse.name,
-    slotInfo: {
-      date: normalizedBookingDate,
-      label: slot.label,
-      timing: slot.timing,
-      checkIn,
-      checkOut
-    },
-    paymentInfo: {
-      transactionId: null,
-      amount: totalAmount,
-      status: paymentStatus,
-
-      // ✅ added (only these)
-      advancePayment: advance,
-      remainingAmount: remaining,
-      cleaningFee: feeConfig.cleaningFee,
-      serviceFee: feeConfig.serviceFee,
-      slotPrice: slot.price,
-      completePayment
-    },
-    bookingStatus: bookingStatus
-  }
-});
+    res.json({
+      success: true,
+      message: "Booking created successfully (pending payment)",
+      bookingId: createdBooking._id,
+      bookingDetails: {
+        bookingId: createdBooking._id,
+        farmhouseName: farmhouse.name,
+        slotInfo: {
+          date: normalizedBookingDate,
+          label: slot.label,
+          timing: slot.timing,
+          checkIn,
+          checkOut
+        },
+        paymentInfo: {
+          transactionId: null,
+          amount: totalAmount,
+          status: paymentStatus,
+          intendedAdvance: advance,      // ✅ user ka intent dikhao
+          advancePayment: 0,             // ✅ confirmed payment abhi 0
+          remainingAmount: totalAmount,  // ✅ poora remaining
+          cleaningFee: feeConfig.cleaningFee,
+          serviceFee: feeConfig.serviceFee,
+          slotPrice: slot.price,
+          completePayment
+        },
+        bookingStatus: bookingStatus
+      }
+    });
 
   } catch (err) {
     if (session.inTransaction()) await session.abortTransaction();
@@ -2516,51 +2514,52 @@ export const getPaymentById = async (req, res) => {
   }
 };
 
-// =====================================================
-// GET PAYMENT STATISTICS/DASHBOARD
-// =====================================================
 export const getPaymentStatistics = async (req, res) => {
   try {
-    const { period = 'month' } = req.query; // period: day, week, month, year, all
+    const { period = "month" } = req.query;
 
     const currentDate = new Date();
     let startDate = new Date();
 
-    // Set date range based on period
-    switch(period) {
-      case 'day':
+    // =========================
+    // DATE RANGE
+    // =========================
+    switch (period) {
+      case "day":
         startDate.setHours(0, 0, 0, 0);
         break;
-      case 'week':
+      case "week":
         startDate.setDate(currentDate.getDate() - 7);
         startDate.setHours(0, 0, 0, 0);
         break;
-      case 'month':
+      case "month":
         startDate.setMonth(currentDate.getMonth() - 1);
         startDate.setHours(0, 0, 0, 0);
         break;
-      case 'year':
+      case "year":
         startDate.setFullYear(currentDate.getFullYear() - 1);
         startDate.setHours(0, 0, 0, 0);
         break;
-      case 'all':
-        startDate = new Date(0); // Beginning of time
+      case "all":
+        startDate = new Date(0);
         break;
       default:
         startDate.setMonth(currentDate.getMonth() - 1);
     }
 
-    console.log(`📊 Fetching payment statistics for period: ${period}`);
+    console.log("📊 Payment stats period:", period);
 
-    // Get payment statistics
     const [
-      overallStats,
+      overview,
       dailyStats,
       paymentMethodStats,
       refundStats,
       topPayments
     ] = await Promise.all([
-      // Overall statistics
+
+      // =========================
+      // OVERALL (ONLY COMPLETED + PAID)
+      // =========================
       Booking.aggregate([
         {
           $match: {
@@ -2570,26 +2569,72 @@ export const getPaymentStatistics = async (req, res) => {
         {
           $group: {
             _id: null,
+
             totalPayments: { $sum: 1 },
-            totalAmount: { $sum: '$totalAmount' },
-            avgAmount: { $avg: '$totalAmount' },
-            completedCount: {
-              $sum: { $cond: [{ $eq: ['$paymentStatus', 'completed'] }, 1, 0] }
+
+            totalRevenue: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$status", "completed"] },
+                      { $eq: ["$paymentStatus", "paid"] }
+                    ]
+                  },
+                  "$totalAmount",
+                  0
+                ]
+              }
             },
-            pendingCount: {
-              $sum: { $cond: [{ $eq: ['$paymentStatus', 'pending'] }, 1, 0] }
+
+            avgAmount: {
+              $avg: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$status", "completed"] },
+                      { $eq: ["$paymentStatus", "paid"] }
+                    ]
+                  },
+                  "$totalAmount",
+                  null
+                ]
+              }
             },
-            failedCount: {
-              $sum: { $cond: [{ $eq: ['$paymentStatus', 'failed'] }, 1, 0] }
+
+            completed: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$status", "completed"] },
+                      { $eq: ["$paymentStatus", "paid"] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
             },
-            refundedCount: {
-              $sum: { $cond: [{ $eq: ['$paymentStatus', 'refunded'] }, 1, 0] }
+
+            pending: {
+              $sum: {
+                $cond: [{ $eq: ["$paymentStatus", "pending"] }, 1, 0]
+              }
+            },
+
+            failed: {
+              $sum: {
+                $cond: [{ $eq: ["$paymentStatus", "failed"] }, 1, 0]
+              }
             }
           }
         }
       ]),
 
-      // Daily statistics for chart
+      // =========================
+      // DAILY (ONLY COMPLETED + PAID)
+      // =========================
       Booking.aggregate([
         {
           $match: {
@@ -2601,172 +2646,163 @@ export const getPaymentStatistics = async (req, res) => {
             _id: {
               $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
             },
-            count: { $sum: 1 },
-            amount: { $sum: '$totalAmount' },
-            completed: {
-              $sum: { $cond: [{ $eq: ['$paymentStatus', 'completed'] }, 1, 0] }
-            },
-            failed: {
-              $sum: { $cond: [{ $eq: ['$paymentStatus', 'failed'] }, 1, 0] }
+
+            payments: { $sum: 1 },
+
+            revenue: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$status", "completed"] },
+                      { $eq: ["$paymentStatus", "paid"] }
+                    ]
+                  },
+                  "$totalAmount",
+                  0
+                ]
+              }
             }
           }
         },
-        { $sort: { '_id': 1 } }
+        { $sort: { _id: 1 } }
       ]),
 
-      // Payment method statistics (from razorpay)
+      // =========================
+      // PAYMENT METHODS
+      // =========================
       Booking.aggregate([
         {
           $match: {
             createdAt: { $gte: startDate },
-            paymentStatus: 'completed'
-          }
-        },
-        {
-          $lookup: {
-            from: 'razorpay_payments', // You might need to adjust this
-            localField: 'razorpayPaymentId',
-            foreignField: 'id',
-            as: 'razorpay'
+            status: "completed",
+            paymentStatus: "paid"
           }
         },
         {
           $group: {
-            _id: '$razorpay.method',
+            _id: "$paymentMethod",
             count: { $sum: 1 },
-            totalAmount: { $sum: '$totalAmount' }
+            revenue: { $sum: "$totalAmount" }
           }
-        },
-        {
-          $match: { _id: { $ne: null } }
         }
       ]),
 
-      // Refund statistics
+      // =========================
+      // REFUNDS
+      // =========================
       Booking.aggregate([
         {
           $match: {
-            'refundDetails': { $exists: true, $ne: null },
-            createdAt: { $gte: startDate }
+            refundDetails: { $exists: true }
           }
         },
         {
           $group: {
             _id: null,
             totalRefunds: { $sum: 1 },
-            totalRefundAmount: { $sum: '$refundDetails.amount' },
-            successfulRefunds: {
-              $sum: { $cond: [{ $eq: ['$refundDetails.status', 'processed'] }, 1, 0] }
-            },
-            pendingRefunds: {
-              $sum: { $cond: [{ $eq: ['$refundDetails.status', 'pending'] }, 1, 0] }
-            },
-            failedRefunds: {
-              $sum: { $cond: [{ $eq: ['$refundDetails.status', 'failed'] }, 1, 0] }
-            }
+            refundAmount: { $sum: "$refundDetails.amount" }
           }
         }
       ]),
 
-      // Top 5 payments by amount
+      // =========================
+      // TOP PAYMENTS
+      // =========================
       Booking.find({
-        createdAt: { $gte: startDate },
-        paymentStatus: 'completed'
+        status: "completed",
+        paymentStatus: "paid"
       })
-        .populate('userId', 'fullName email')
-        .populate('farmhouseId', 'name')
+        .populate("userId", "fullName email phone")
+        .populate("farmhouseId", "name address")
         .sort({ totalAmount: -1 })
         .limit(5)
-        .select('totalAmount userId farmhouseId createdAt')
         .lean()
     ]);
 
-    // Prepare response
-    const statistics = {
+    const stats = overview[0] || {};
+
+    return res.json({
+      success: true,
+
       period,
       dateRange: {
-        start: startDate,
-        end: currentDate
+        from: startDate,
+        to: currentDate
       },
-      overview: overallStats[0] ? {
-        totalPayments: overallStats[0].totalPayments,
-        totalAmount: overallStats[0].totalAmount,
-        averageAmount: Math.round(overallStats[0].avgAmount * 100) / 100,
-        successRate: overallStats[0].totalPayments > 0
-          ? Math.round((overallStats[0].completedCount / overallStats[0].totalPayments) * 100)
-          : 0,
-        byStatus: {
-          completed: overallStats[0].completedCount,
-          pending: overallStats[0].pendingCount,
-          failed: overallStats[0].failedCount,
-          refunded: overallStats[0].refundedCount
-        }
-      } : {
-        totalPayments: 0,
-        totalAmount: 0,
-        averageAmount: 0,
-        successRate: 0,
-        byStatus: {
-          completed: 0,
-          pending: 0,
-          failed: 0,
-          refunded: 0
-        }
-      },
-      dailyTrend: dailyStats.map(day => ({
-        date: day._id,
-        payments: day.count,
-        amount: day.amount,
-        completed: day.completed,
-        failed: day.failed
-      })),
-      paymentMethods: paymentMethodStats.map(method => ({
-        method: method._id || 'Unknown',
-        count: method.count,
-        amount: method.totalAmount
-      })),
-      refunds: refundStats[0] ? {
-        totalRefunds: refundStats[0].totalRefunds,
-        totalRefundAmount: refundStats[0].totalRefundAmount,
-        successful: refundStats[0].successfulRefunds,
-        pending: refundStats[0].pendingRefunds,
-        failed: refundStats[0].failedRefunds,
-        refundRate: overallStats[0]?.totalPayments
-          ? Math.round((refundStats[0].totalRefunds / overallStats[0].totalPayments) * 100)
-          : 0
-      } : {
-        totalRefunds: 0,
-        totalRefundAmount: 0,
-        successful: 0,
-        pending: 0,
-        failed: 0,
-        refundRate: 0
-      },
-      topPayments: topPayments.map(payment => ({
-        id: payment._id,
-        amount: payment.totalAmount,
-        user: payment.userId?.fullName || 'Unknown',
-        farmhouse: payment.farmhouseId?.name || 'Unknown',
-        date: payment.createdAt
-      }))
-    };
 
-    res.json({
-      success: true,
-      message: 'Payment statistics retrieved successfully',
-      statistics
+      // =========================
+      // OVERVIEW (FINAL FIXED)
+      // =========================
+      overview: {
+        totalPayments: stats.totalPayments || 0,
+        totalRevenue: stats.totalRevenue || 0,
+        averagePayment: Math.round(stats.avgAmount || 0),
+
+        status: {
+          completed: stats.completed || 0,
+          pending: stats.pending || 0,
+          failed: stats.failed || 0
+        }
+      },
+
+      // =========================
+      // CHARTS
+      // =========================
+      charts: {
+        daily: dailyStats.map(d => ({
+          date: d._id,
+          payments: d.payments,
+          revenue: d.revenue
+        }))
+      },
+
+      // =========================
+      // PAYMENT METHODS
+      // =========================
+      paymentMethods: paymentMethodStats.map(p => ({
+        method: p._id || "unknown",
+        count: p.count,
+        revenue: p.revenue
+      })),
+
+      // =========================
+      // REFUNDS
+      // =========================
+      refunds: {
+        totalRefunds: refundStats[0]?.totalRefunds || 0,
+        totalRefundAmount: refundStats[0]?.refundAmount || 0
+      },
+
+      // =========================
+      // TOP PAYMENTS
+      // =========================
+      topPayments: topPayments.map(b => ({
+        bookingId: b._id,
+        amount: b.totalAmount,
+        user: {
+          name: b.userId?.fullName || "Unknown",
+          email: b.userId?.email || "-",
+          phone: b.userId?.phone || "-"
+        },
+        farmhouse: {
+          name: b.farmhouseId?.name || "Unknown",
+          address: b.farmhouseId?.address || "-"
+        },
+        date: b.createdAt,
+        status: b.paymentStatus
+      }))
     });
 
   } catch (err) {
-    console.error("❌ Error fetching payment statistics:", err);
-    res.status(500).json({
+    console.error("❌ Payment stats error:", err);
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch payment statistics",
       error: err.message
     });
   }
 };
-
 // =====================================================
 // GET USER PAYMENT HISTORY
 // =====================================================

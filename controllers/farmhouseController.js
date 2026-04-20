@@ -706,9 +706,9 @@ export const getUserWishlists = async (req, res) => {
   }
 };
 
-// // ============================================
-// // GET NEARBY FARMHOUSES (Updated with date filtering)
-// // ============================================
+// ============================================
+// GET NEARBY FARMHOUSES (FINAL - DATE BASED FIX)
+// ============================================
 export const getNearbyFarmhouses = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -756,7 +756,7 @@ export const getNearbyFarmhouses = async (req, res) => {
     }
 
     // -------------------------------
-    // SLOT LEVEL FILTER (IMPORTANT FIX)
+    // SLOT FILTER (DATE BASED BLOCK)
     // -------------------------------
     if (date) {
       const searchDate = new Date(date);
@@ -766,25 +766,22 @@ export const getNearbyFarmhouses = async (req, res) => {
         const bookedSlots = fh.bookedSlots || [];
         const timePrices = fh.timePrices || [];
 
-        const availableTimePrices = timePrices.filter(slot => {
-          const isBooked = bookedSlots.some(booked => {
-            const bookedDate = new Date(booked.date);
-            bookedDate.setHours(0, 0, 0, 0);
+        // ❌ agar us date pe koi bhi booking hai → saare slots hata do
+        const isDateBooked = bookedSlots.some(booked => {
+          const bookedDate = new Date(booked.date);
+          bookedDate.setHours(0, 0, 0, 0);
 
-            return (
-              bookedDate.getTime() === searchDate.getTime() &&
-              booked.label === slot.label
-            );
-          });
-
-          return !isBooked; // remove booked slot only
+          return bookedDate.getTime() === searchDate.getTime();
         });
 
         return {
           ...fh,
-          timePrices: availableTimePrices
+          timePrices: isDateBooked ? [] : timePrices
         };
       });
+
+      // 🔥 IMPORTANT: jisme koi slot nahi bacha → remove farmhouse
+      farmhouses = farmhouses.filter(fh => fh.timePrices.length > 0);
     }
 
     // -------------------------------
@@ -804,7 +801,7 @@ export const getNearbyFarmhouses = async (req, res) => {
       );
     }
 
-    res.json({
+    return res.json({
       success: true,
       userLocation: { lat, lng },
       date: date || "Not specified",
@@ -813,10 +810,9 @@ export const getNearbyFarmhouses = async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 };
-
 // ============================================
 // GET NEARBY FARMHOUSES (without location - shows all)
 // ============================================
