@@ -14,6 +14,9 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import { Booking } from "./models/bookingModel.js";
 
+import cron from "node-cron";
+import { sendPushToAllUsers } from "./utils/pushNotification.js";
+
 dotenv.config(); // MUST be first
 
 // ==================== DNS FIX ====================
@@ -194,6 +197,52 @@ app.post(
 );
 
 
+const sendGreeting = async () => {
+  try {
+    const hour = new Date().getHours();
+
+    let title = "";
+    let message = "";
+
+    if (hour >= 5 && hour < 12) {
+      title = "Good Morning ☀️";
+      message = "Start your day with fresh energy!";
+    } else if (hour >= 12 && hour < 17) {
+      title = "Good Afternoon 🌤️";
+      message = "Hope your day is going well!";
+    } else if (hour >= 17 && hour < 21) {
+      title = "Good Evening 🌇";
+      message = "Relax and enjoy your evening!";
+    } else {
+      title = "Good Night 🌙";
+      message = "Have a peaceful sleep!";
+    }
+
+    await sendPushToAllUsers(title, message);
+
+    console.log("✅ Greeting sent:", title);
+
+  } catch (err) {
+    console.error("❌ Greeting error:", err.message);
+  }
+};
+
+
+cron.schedule("0 * * * *", async () => {
+  console.log("⏰ Running greeting cron...");
+  await sendGreeting();
+});
+
+
+
+// cron.schedule("*/1 * * * *", async () => {
+//   console.log("⏰ Sending test cron push...");
+
+//   await sendPushToAllUsers(
+//     "Cron Test 🚀",
+//     "Ye ek test notification hai jo cron se ja raha hai"
+//   );
+// });
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api", farmhouse);

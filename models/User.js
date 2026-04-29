@@ -6,10 +6,10 @@ const addressSchema = new mongoose.Schema({
   state: { type: String, required: true },
   country: { type: String, required: true, default: "India" },
   pinCode: { type: String, required: true, match: /^[0-9]{6}$/ }, // 6-digit Indian pin code
-  addressType: { 
-    type: String, 
-    enum: ["home", "work", "other"], 
-    default: "home" 
+  addressType: {
+    type: String,
+    enum: ["home", "work", "other"],
+    default: "home"
   },
   lat: Number,
   lng: Number,
@@ -21,8 +21,8 @@ const addressSchema = new mongoose.Schema({
 const notificationSchema = new mongoose.Schema({
   title: String,
   message: String,
-  type: { 
-    type: String, 
+  type: {
+    type: String,
     enum: ["booking", "payment", "cancellation", "general", "promotion"],
     default: "general"
   },
@@ -38,7 +38,11 @@ const userSchema = new mongoose.Schema({
   username: String,
   gender: { type: String, enum: ["male", "female", "other"], default: "other" },
 
-    deleteToken: {
+   fcmToken: {
+    type: String
+  },
+
+  deleteToken: {
     type: String,
   },
   deleteTokenExpiration: {
@@ -49,7 +53,7 @@ const userSchema = new mongoose.Schema({
   phoneNumber: { type: String, unique: true },
   profileImage: String,
   password: String,
-  
+
   liveLocation: {
     type: {
       type: String,
@@ -62,10 +66,10 @@ const userSchema = new mongoose.Schema({
     }
   },
   isGuest: {
-      type: Boolean,
-      default: false,
-    },
-  
+    type: Boolean,
+    default: false,
+  },
+
   addresses: [addressSchema],
   notifications: [notificationSchema],
   wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: "Farmhouse" }]

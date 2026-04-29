@@ -3,6 +3,7 @@ import cloudinary from "../config/cloudinary.js";
 import { User } from "../models/User.js";
 import { calculateCheckTimes } from "../utils/timeHelper.js";
 import { Vendor } from "../models/vendor.js"; // Add this import
+import { sendPushToAllUsers } from "../utils/pushNotification.js";
 
 function calculatePrice(basePrice, startStr, endStr, farmhouse) {
   const duration = calculateDuration(startStr, endStr);
@@ -157,6 +158,37 @@ export const createFarmhouse = async (req, res) => {
       message: "Farmhouse created successfully",
       farmhouse,
       vendorCredentials
+    });
+
+ // ---------------- NOTIFICATIONS (ASYNC NON-BLOCKING) ----------------
+    setImmediate(async () => {
+      try {
+        const title = "New Farmhouse Added 🏡";
+        const message = `${name} is now available for booking!`;
+
+        // 🔥 Firebase Push
+        await sendPushToAllUsers(title, message);
+
+        // 🗄️ DB Notifications Save
+        await User.updateMany(
+          {},
+          {
+            $push: {
+              notifications: {
+                title,
+                message,
+                type: "promotion",
+                read: false,
+                createdAt: new Date()
+              }
+            }
+          }
+        );
+
+        console.log("✅ Push + DB notifications sent");
+      } catch (err) {
+        console.error("❌ Notification error:", err.message);
+      }
     });
 
   } catch (err) {
@@ -605,6 +637,37 @@ export const updateFarmhouse = async (req, res) => {
       { $set: updateData },
       { new: true, runValidators: true }
     );
+
+  setImmediate(async () => {
+  try {
+    const title = "Farmhouse Updated 🏡";
+    const message = `${updatedFarmhouse.name} has been updated. Check new details!`;
+
+    // 📲 Firebase Push
+    await sendPushToAllUsers(title, message);
+
+    // 🗄️ Save in DB notifications
+    await User.updateMany(
+      {},
+      {
+        $push: {
+          notifications: {
+            title,
+            message,
+            type: "general",
+            read: false,
+            createdAt: new Date()
+          }
+        }
+      }
+    );
+
+    console.log("✅ Update push + DB notification sent");
+
+  } catch (err) {
+    console.error("❌ Notification error:", err.message);
+  }
+});
 
     res.json({
       success: true,

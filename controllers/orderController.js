@@ -9,6 +9,8 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import { BookingSession } from "../models/BookingSession.js";
 import { Vendor } from "../models/vendor.js";
+import { sendPushToAllUsers } from "../utils/pushNotification.js";
+ 
 
 
 
@@ -649,6 +651,40 @@ export const createBooking = async (req, res) => {
 
     await session.commitTransaction();
     session.endSession();
+
+
+ setImmediate(async () => {
+  try {
+    const title = "New Booking Confirmed 🏡";
+    const message = `A new booking has been made at ${farmhouse.name}`;
+
+    // 📲 Firebase Push
+    await sendPushToAllUsers(title, message);
+
+    // 🗄️ Save in DB notifications
+    await User.updateMany(
+      {},
+      {
+        $push: {
+          notifications: {
+            title,
+            message,
+            type: "booking",
+            relatedId: createdBooking._id,
+            read: false,
+            createdAt: new Date()
+          }
+        }
+      }
+    );
+
+    console.log("✅ Booking push + DB notification sent");
+
+  } catch (err) {
+    console.error("❌ Notification error:", err.message);
+  }
+});
+
 
     // ---------------- RESPONSE ----------------
     res.json({

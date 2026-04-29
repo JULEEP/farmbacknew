@@ -45,4 +45,8 @@ router.delete('/deleteuser/:userId', UserController.deleteUserAccount);
 router.post('/deleteaccount', UserController.deleteAccount)
 router.get('/confirm-delete-account/:token', UserController.confirmDeleteAccount);
 
+router.get("/allnotifications/:userId", UserController.getNotificationsByUserId);
+router.delete("/deletenotifcations/:userId", UserController.deleteNotifications);
+
+
 export default router;

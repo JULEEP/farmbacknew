@@ -181,7 +181,7 @@ export const verifyOtp = async (req, res) => {
 // -----------------------------
 export const login = async (req, res) => {
   try {
-    const { phoneNumber, password } = req.body;
+    const { phoneNumber, password, fcmToken } = req.body;
 
     const user = await User.findOne({ phoneNumber });
     if (!user)
@@ -191,7 +191,13 @@ export const login = async (req, res) => {
     if (!match)
       return res.status(400).json({ message: "Invalid password" });
 
-    // ✅ Direct login token (NO OTP)
+    // 🔥 Save / update FCM token
+    if (fcmToken) {
+      user.fcmToken = fcmToken;
+      await user.save();
+    }
+
+    // ✅ Direct login token
     const token = generateToken(
       { id: user._id, phoneNumber },
       "7d"
@@ -1484,3 +1490,83 @@ export const updateUser = async (req, res) => {
 
 
 
+// ============================================
+// GET NOTIFICATIONS BY USER ID
+// ============================================
+export const getNotificationsByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId).select("notifications");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // latest first sorting
+    const notifications = (user.notifications || []).sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
+
+    res.json({
+      success: true,
+      count: notifications.length,
+      notifications
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+};
+
+
+
+// ============================================
+// DELETE NOTIFICATIONS (SINGLE / MULTIPLE)
+// ============================================
+export const deleteNotifications = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { notificationIds } = req.body;
+
+    if (!notificationIds || !Array.isArray(notificationIds) || notificationIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "notificationIds array is required"
+      });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // filter out deleted notifications
+    user.notifications = user.notifications.filter(
+      (notif) => !notificationIds.includes(notif._id.toString())
+    );
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Notifications deleted successfully"
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+};
